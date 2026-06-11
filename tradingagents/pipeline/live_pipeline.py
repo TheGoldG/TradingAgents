@@ -11,11 +11,12 @@ from tradingagents.pipeline.portfolio_manager import PortfolioManager
 logger = logging.getLogger(__name__)
 
 class LivePipeline:
-    def __init__(self, paper: bool = True):
+    def __init__(self, paper: bool = True, checkpoint: bool = False):
         self.screener = ScreenerAgent()
         self.executor = AlpacaExecutorAgent(paper=paper)
         self.portfolio = PortfolioManager(paper=paper)
         self.today = datetime.now().strftime("%Y-%m-%d")
+        self.checkpoint = checkpoint
 
     def _run_research(self, ticker: str, analysts: List[str]) -> bool:
         """
@@ -25,6 +26,8 @@ class LivePipeline:
         
         # Override config to use only the selected analysts for this run
         config = DEFAULT_CONFIG.copy()
+        if self.checkpoint:
+            config["checkpoint_enabled"] = True
         
         graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
         final_state, decision = graph.propagate(ticker, self.today)

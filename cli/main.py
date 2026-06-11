@@ -1311,11 +1311,12 @@ def live(
     quarterly_review: bool = typer.Option(False, "--quarterly-review", help="Run the quarterly deep structural review"),
     weekly_monitor: bool = typer.Option(False, "--weekly-monitor", help="Run the weekly catastrophe monitor"),
     paper: bool = typer.Option(True, "--paper/--live", help="Use Alpaca paper trading or live trading"),
+    checkpoint: bool = typer.Option(False, "--checkpoint", help="Enable checkpoint/resume: save state after each node so a crashed run can resume."),
 ):
     """Run the Live Trading Pipeline operations."""
     from tradingagents.pipeline.live_pipeline import LivePipeline
     
-    pipeline = LivePipeline(paper=paper)
+    pipeline = LivePipeline(paper=paper, checkpoint=checkpoint)
     
     if init:
         pipeline.init_portfolio()
