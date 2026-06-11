@@ -1,10 +1,12 @@
 import asyncio
 import json
 import logging
+import os
+from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, BackgroundTasks, Request
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
@@ -19,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="TradingAgents API")
 
-# Enable CORS for the frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,16 +29,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global queue for SSE events
 event_queue = asyncio.Queue()
+loop = None
 
-# We need to bridge synchronous LangGraph calls with the async SSE stream.
-# We'll run the pipeline in a background thread using asyncio.to_thread.
+from pydantic import BaseModel
+
+class PipelineRequest(BaseModel):
+    paper: bool = True
+    llm_provider: Optional[str] = None
+    quick_model: Optional[str] = None
+    deep_model: Optional[str] = None
+
+# Global state to prevent concurrent pipeline runs and hold progress
+live_state = {
+    "is_running": False,
+    "operation": None,
+    "ticker": None,
+    "current": 0,
+    "total": 0,
+    "analysts": [],
+    "agent_status": {},
+    "reports": {},
+    "progress": "",
+    "llm_provider": None,
+    "quick_model": None,
+    "deep_model": None
+}
 
 def emit_event(event_type: str, data: Any):
-    """Utility to put an event into the queue for SSE."""
     try:
-        # Put it in the queue wrapped as a standard data payload
         payload = {"event": event_type, "data": json.dumps(data)}
         asyncio.run_coroutine_threadsafe(
             event_queue.put(json.dumps(payload)),
@@ -46,25 +66,34 @@ def emit_event(event_type: str, data: Any):
     except Exception as e:
         logger.error(f"Failed to emit event: {e}")
 
-# This will hold the main event loop
-loop = None
-
 @app.on_event("startup")
 async def startup_event():
     global loop
     loop = asyncio.get_running_loop()
 
-
-# Custom research function to inject into LivePipeline to capture stream events
 def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, current_idx: int, total: int):
-    op_name = "Live Pipeline"
+    op_name = live_state["operation"] or "Live Pipeline"
+    
+    live_state["ticker"] = ticker
+    live_state["current"] = current_idx
+    live_state["total"] = total
+    live_state["progress"] = f"({current_idx}/{total})"
+    live_state["analysts"] = analysts
+    live_state["agent_status"] = {a: "pending" for a in analysts}
+    live_state["reports"] = {}
+    
     emit_event("pipeline_status", {"ticker": ticker, "current": current_idx, "total": total, "operation": op_name})
     
     config = DEFAULT_CONFIG.copy()
     config["checkpoint_enabled"] = checkpoint
+    if live_state.get("llm_provider"):
+        config["llm_provider"] = live_state["llm_provider"]
+    if live_state.get("quick_model"):
+        config["quick_think_llm"] = live_state["quick_model"]
+    if live_state.get("deep_model"):
+        config["deep_think_llm"] = live_state["deep_model"]
 
     graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
-    
     instrument_context = graph.resolve_instrument_context(ticker, "stock")
     init_agent_state = graph.propagator.create_initial_state(
         ticker,
@@ -89,6 +118,9 @@ def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, cu
 
             msg_type, content = classify_message_type(message)
             if content and content.strip():
+                atype = msg_type.lower()
+                if atype in live_state["agent_status"] and live_state["agent_status"][atype] != "completed":
+                    live_state["agent_status"][atype] = "in_progress"
                 emit_event("agent_message", {"type": msg_type, "content": content})
 
             if hasattr(message, "tool_calls") and message.tool_calls:
@@ -97,7 +129,6 @@ def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, cu
                     t_args = tool_call["args"] if isinstance(tool_call, dict) else tool_call.args
                     emit_event("tool_call", {"name": name, "args": t_args})
 
-        # Process report sections for debate/reports
         reports = {}
         for key in ["market_report", "sentiment_report", "news_report", "fundamentals_report", "investment_plan", "trader_investment_plan", "final_trade_decision"]:
             if key in chunk and chunk[key]:
@@ -121,9 +152,17 @@ def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, cu
             }
             
         if reports:
+            live_state["reports"].update(reports)
+            if reports.get("market_report"): live_state["agent_status"]["market"] = "completed"
+            if reports.get("sentiment_report"): live_state["agent_status"]["social"] = "completed"
+            if reports.get("news_report"): live_state["agent_status"]["news"] = "completed"
+            if reports.get("fundamentals_report"): live_state["agent_status"]["fundamentals"] = "completed"
             emit_event("report_update", reports)
 
         trace.append(chunk)
+
+    for k in live_state["agent_status"]:
+        live_state["agent_status"][k] = "completed"
 
     final_state = {}
     for chunk in trace:
@@ -137,9 +176,14 @@ def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, cu
 
     return decision.upper() == "BUY" or decision.upper() == "HOLD"
 
-
-def run_pipeline_task(operation: str, paper: bool = True):
-    pipeline = LivePipeline(paper=paper, checkpoint=False, research_fn=api_research_callback)
+def run_pipeline_task(operation: str, req: PipelineRequest):
+    live_state["is_running"] = True
+    live_state["operation"] = operation
+    live_state["llm_provider"] = req.llm_provider
+    live_state["quick_model"] = req.quick_model
+    live_state["deep_model"] = req.deep_model
+    
+    pipeline = LivePipeline(paper=req.paper, checkpoint=False, research_fn=api_research_callback)
     try:
         if operation == "init":
             pipeline.init_portfolio()
@@ -151,15 +195,22 @@ def run_pipeline_task(operation: str, paper: bool = True):
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         emit_event("pipeline_error", {"operation": operation, "error": str(e)})
+    finally:
+        live_state["is_running"] = False
+        live_state["operation"] = None
 
+@app.get("/api/pipeline/status")
+async def get_pipeline_status():
+    return live_state
 
 @app.post("/api/pipeline/{operation}")
-async def start_pipeline(operation: str, background_tasks: BackgroundTasks, paper: bool = True):
+async def start_pipeline(operation: str, req: PipelineRequest, background_tasks: BackgroundTasks):
+    if live_state["is_running"]:
+        raise HTTPException(status_code=400, detail="Pipeline is already running")
     if operation not in ["init", "quarterly", "weekly"]:
-        return {"error": "Invalid operation"}
-    background_tasks.add_task(asyncio.to_thread, run_pipeline_task, operation, paper)
+        raise HTTPException(status_code=400, detail="Invalid operation")
+    background_tasks.add_task(asyncio.to_thread, run_pipeline_task, operation, req)
     return {"status": "started", "operation": operation}
-
 
 @app.get("/api/portfolio")
 async def get_portfolio(paper: bool = True):
@@ -167,6 +218,36 @@ async def get_portfolio(paper: bool = True):
     holdings = manager.get_current_holdings()
     return {"holdings": holdings}
 
+@app.get("/api/reports")
+async def list_reports():
+    results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
+    if not results_dir.exists():
+        return {"reports": {}}
+    
+    reports = {}
+    for ticker_dir in results_dir.iterdir():
+        if ticker_dir.is_dir():
+            ticker = ticker_dir.name
+            strat_dir = ticker_dir / "TradingAgentsStrategy_logs"
+            if strat_dir.exists():
+                dates = []
+                for f in strat_dir.glob("*_state.json"):
+                    # filename: MSFT_2026-06-11_state.json
+                    parts = f.name.replace("_state.json", "").split("_")
+                    if len(parts) >= 2:
+                        dates.append(parts[-1])
+                if dates:
+                    reports[ticker] = sorted(dates, reverse=True)
+    return {"reports": reports}
+
+@app.get("/api/reports/{ticker}/{date}")
+async def get_report(ticker: str, date: str):
+    results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
+    file_path = results_dir / ticker / "TradingAgentsStrategy_logs" / f"{ticker}_{date}_state.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Report not found")
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 @app.get("/api/stream")
 async def stream_events(request: Request):
@@ -175,7 +256,6 @@ async def stream_events(request: Request):
             if await request.is_disconnected():
                 break
             try:
-                # Wait for an event with a timeout so we can check disconnects
                 event_data = await asyncio.wait_for(event_queue.get(), timeout=1.0)
                 yield event_data
             except asyncio.TimeoutError:
