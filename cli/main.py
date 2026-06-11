@@ -1305,5 +1305,26 @@ def analyze(
     run_analysis(checkpoint=checkpoint)
 
 
+@app.command()
+def live(
+    init: bool = typer.Option(False, "--init", help="Initialize the 15-stock Day One portfolio"),
+    quarterly_review: bool = typer.Option(False, "--quarterly-review", help="Run the quarterly deep structural review"),
+    weekly_monitor: bool = typer.Option(False, "--weekly-monitor", help="Run the weekly catastrophe monitor"),
+    paper: bool = typer.Option(True, "--paper/--live", help="Use Alpaca paper trading or live trading"),
+):
+    """Run the Live Trading Pipeline operations."""
+    from tradingagents.pipeline.live_pipeline import LivePipeline
+    
+    pipeline = LivePipeline(paper=paper)
+    
+    if init:
+        pipeline.init_portfolio()
+    elif quarterly_review:
+        pipeline.quarterly_review()
+    elif weekly_monitor:
+        pipeline.weekly_monitor()
+    else:
+        console.print("[yellow]Please specify an operation: --init, --quarterly-review, or --weekly-monitor[/yellow]")
+
 if __name__ == "__main__":
     app()
