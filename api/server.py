@@ -175,7 +175,10 @@ def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, cu
     emit_event("research_complete", {"ticker": ticker, "decision": decision})
 
     graph.ticker = ticker
-    graph._log_state(datetime.now().strftime("%Y-%m-%d"), final_state)
+    
+    # Do not save mock runs to historical reports
+    if live_state.get("llm_provider") != "mock":
+        graph._log_state(datetime.now().strftime("%Y-%m-%d"), final_state)
 
     return decision.upper() == "BUY" or decision.upper() == "HOLD"
 
@@ -236,33 +239,19 @@ async def get_portfolio(paper: bool = True):
 
 @app.get("/api/reports")
 async def list_reports():
-    results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
-    if not results_dir.exists():
-        return {"reports": {}}
-    
-    reports = {}
-    for ticker_dir in results_dir.iterdir():
-        if ticker_dir.is_dir():
-            ticker = ticker_dir.name
-            strat_dir = ticker_dir / "TradingAgentsStrategy_logs"
-            if strat_dir.exists():
-                dates = []
-                for f in strat_dir.glob("full_states_log_*.json"):
-                    # filename: full_states_log_2026-06-11.json
-                    date_part = f.name.replace("full_states_log_", "").replace(".json", "")
-                    dates.append(date_part)
-                if dates:
-                    reports[ticker] = sorted(dates, reverse=True)
+    from tradingagents.db import init_db, list_reports
+    init_db()
+    reports = list_reports()
     return {"reports": reports}
 
 @app.get("/api/reports/{ticker}/{date}")
 async def get_report(ticker: str, date: str):
-    results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
-    file_path = results_dir / ticker / "TradingAgentsStrategy_logs" / f"full_states_log_{date}.json"
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Report not found")
-    with open(file_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    from tradingagents.db import init_db, get_report
+    init_db()
+    report_data = get_report(ticker, date)
+    if report_data:
+        return report_data
+    return {"error": "Report not found"}
 
 @app.get("/api/stream")
 async def stream_events(request: Request):

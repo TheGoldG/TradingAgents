@@ -40,8 +40,8 @@ class AlpacaExecutorAgent:
             account = self.client.get_account()
             equity = float(account.equity)
             
-            # Target 1/15th of the entire portfolio equity
-            target_allocation = equity / total_slots
+            # Target 1/15th of the entire portfolio equity, rounded to 2 decimal places
+            target_allocation = round(equity / total_slots, 2)
             
             # Submit a notional (fractional) market order if supported, 
             # otherwise we'd need to fetch current price and calculate qty.

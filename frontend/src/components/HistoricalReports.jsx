@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Search } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight } from 'lucide-react';
 
 function ReportCard({ title, content }) {
   if (!content) return null;
@@ -21,6 +21,7 @@ function HistoricalReports() {
   const [selectedTicker, setSelectedTicker] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [reportData, setReportData] = useState(null);
+  const [expandedFolders, setExpandedFolders] = useState({});
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -28,6 +29,12 @@ function HistoricalReports() {
         const res = await fetch('http://localhost:8000/api/reports');
         const data = await res.json();
         setReportsMenu(data.reports || {});
+        // Auto-expand all folders initially
+        const initialExpanded = {};
+        Object.keys(data.reports || {}).forEach(ticker => {
+          initialExpanded[ticker] = true;
+        });
+        setExpandedFolders(initialExpanded);
       } catch (e) {
         console.error("Failed to fetch reports list", e);
       }
@@ -35,25 +42,23 @@ function HistoricalReports() {
     fetchReports();
   }, []);
 
-  useEffect(() => {
-    if (selectedTicker && selectedDate) {
-      const loadReport = async () => {
-        try {
-          const res = await fetch(`http://localhost:8000/api/reports/${selectedTicker}/${selectedDate}`);
-          const data = await res.json();
-          setReportData(data);
-        } catch (e) {
-          console.error("Failed to load report data", e);
-        }
-      };
-      loadReport();
-    }
-  }, [selectedTicker, selectedDate]);
-
-  const handleSelect = (ticker, date) => {
+  const handleSelect = async (ticker, date) => {
     setSelectedTicker(ticker);
     setSelectedDate(date);
-    setReportData(null);
+    try {
+      const res = await fetch(`http://localhost:8000/api/reports/${ticker}/${date}`);
+      const data = await res.json();
+      setReportData(data);
+    } catch (e) {
+      console.error("Failed to fetch report data", e);
+    }
+  };
+
+  const toggleFolder = (ticker) => {
+    setExpandedFolders(prev => ({
+      ...prev,
+      [ticker]: !prev[ticker]
+    }));
   };
 
   return (
@@ -69,31 +74,50 @@ function HistoricalReports() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>No history found.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {Object.entries(reportsMenu).map(([ticker, dates]) => (
-              <div key={ticker}>
-                <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
-                  {ticker}
-                </div>
-                {dates.map(date => (
-                  <button 
-                    key={date}
-                    onClick={() => handleSelect(ticker, date)}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '0.5rem',
-                      background: selectedTicker === ticker && selectedDate === date ? 'rgba(255,255,255,0.1)' : 'transparent',
-                      border: 'none',
-                      color: 'var(--text-secondary)',
+            {Object.entries(reportsMenu).map(([ticker, dates]) => {
+              const isExpanded = expandedFolders[ticker];
+              return (
+                <div key={ticker}>
+                  <div 
+                    onClick={() => toggleFolder(ticker)}
+                    style={{ 
+                      fontWeight: 'bold', 
+                      color: 'var(--text-primary)', 
+                      marginBottom: '0.25rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
                       cursor: 'pointer',
-                      borderRadius: '4px'
+                      padding: '0.25rem',
+                      borderRadius: '4px',
+                      userSelect: 'none'
                     }}
                   >
-                    {date}
-                  </button>
-                ))}
-              </div>
-            ))}
+                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    {ticker}
+                  </div>
+                  {isExpanded && dates.map(date => (
+                    <button 
+                      key={date}
+                      onClick={() => handleSelect(ticker, date)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '0.5rem',
+                        paddingLeft: '2rem',
+                        background: selectedTicker === ticker && selectedDate === date ? 'rgba(255,255,255,0.1)' : 'transparent',
+                        border: 'none',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        borderRadius: '4px'
+                      }}
+                    >
+                      {date}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

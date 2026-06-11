@@ -52,9 +52,18 @@ class LivePipeline:
         allocations_file = results_dir / f"init_allocations_{self.today}.json"
 
         if allocations_file.exists():
-            logger.info("Loading pre-existing allocations from disk...")
             with open(allocations_file, "r", encoding="utf-8") as f:
                 allocations = json.load(f)
+            
+            # Check if the cache matches the current multiplier request
+            cached_count = len(next(iter(allocations.values()))) if allocations else 0
+            if cached_count == stocks_per_category:
+                logger.info("Loading pre-existing allocations from disk...")
+            else:
+                logger.info(f"Multiplier changed (cached: {cached_count}, requested: {stocks_per_category}). Re-running screener...")
+                allocations = self.screener.run_full_screen(stocks_per_category)
+                with open(allocations_file, "w", encoding="utf-8") as f:
+                    json.dump(allocations, f, indent=4)
         else:
             allocations = self.screener.run_full_screen(stocks_per_category)
             with open(allocations_file, "w", encoding="utf-8") as f:
@@ -76,24 +85,24 @@ class LivePipeline:
                 logger.info("Stop requested. Halting init_portfolio.")
                 break
 
-            # Check if this ticker was already researched today
-            results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
-            log_file = results_dir / ticker / "TradingAgentsStrategy_logs" / f"full_states_log_{self.today}.json"
+            # Check if this ticker was already researched today in the DB
+            from tradingagents.db import init_db, report_exists, get_report
+            init_db()
+            
             is_approved = False
             
-            if log_file.exists():
-                logger.info(f"Skipping LLM for {ticker}. Saved report exists.")
-                import json
+            if report_exists(ticker, self.today):
+                logger.info(f"Skipping LLM for {ticker}. Saved report exists in DB.")
                 try:
-                    with open(log_file, "r", encoding="utf-8") as f:
-                        saved_state = json.load(f)
+                    saved_state = get_report(ticker, self.today)
+                    if saved_state:
                         decision = saved_state.get("final_trade_decision", "")
                         is_approved = (decision.upper() == "BUY" or decision.upper() == "HOLD")
                     # Update UI through callback if we have one, just simulating a fast run
                     if self.research_fn:
                         self.research_fn(ticker, full_analysts, self.checkpoint, i, total_count)
                 except Exception as e:
-                    logger.error(f"Error reading {log_file}: {e}")
+                    logger.error(f"Error reading DB for {ticker}: {e}")
                     is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)
             else:
                 is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)

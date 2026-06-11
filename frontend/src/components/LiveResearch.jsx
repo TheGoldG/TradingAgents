@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Activity, CheckCircle, Clock } from 'lucide-react';
+import { Activity, CheckCircle, Clock, ShieldAlert } from 'lucide-react';
 
 function StatusIcon({ status }) {
   if (status === 'completed') return <CheckCircle size={16} style={{ color: 'var(--success)' }} />;

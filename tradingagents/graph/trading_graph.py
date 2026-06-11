@@ -443,15 +443,10 @@ class TradingAgentsGraph:
             "final_trade_decision": final_state["final_trade_decision"],
         }
 
-        # Save to file. Reject ticker values that would escape the
-        # results directory when joined as a path component.
-        safe_ticker = safe_ticker_component(self.ticker)
-        directory = Path(self.config["results_dir"]) / safe_ticker / "TradingAgentsStrategy_logs"
-        directory.mkdir(parents=True, exist_ok=True)
-
-        log_path = directory / f"full_states_log_{trade_date}.json"
-        with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(self.log_states_dict[str(trade_date)], f, indent=4)
+        # Save to database instead of nested folders
+        from tradingagents.db import init_db, save_report
+        init_db()
+        save_report(self.ticker, trade_date, self.log_states_dict[str(trade_date)])
 
     def process_signal(self, full_signal):
         """Process a signal to extract the core decision."""
