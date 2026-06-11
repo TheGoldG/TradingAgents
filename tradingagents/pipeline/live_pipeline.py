@@ -18,6 +18,7 @@ class LivePipeline:
         self.today = datetime.now().strftime("%Y-%m-%d")
         self.checkpoint = checkpoint
         self.research_fn = research_fn
+        self.stop_requested = False
 
     def _run_research(self, ticker: str, analysts: List[str], current_index: int = 1, total_count: int = 1) -> bool:
         """
@@ -44,7 +45,20 @@ class LivePipeline:
         Builds the 15-stock Day One portfolio.
         """
         logger.info("Initializing 15-stock portfolio...")
-        allocations = self.screener.run_full_screen()
+        import os, json
+        from pathlib import Path
+        results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
+        results_dir.mkdir(parents=True, exist_ok=True)
+        allocations_file = results_dir / f"init_allocations_{self.today}.json"
+
+        if allocations_file.exists():
+            logger.info("Loading pre-existing allocations from disk...")
+            with open(allocations_file, "r", encoding="utf-8") as f:
+                allocations = json.load(f)
+        else:
+            allocations = self.screener.run_full_screen()
+            with open(allocations_file, "w", encoding="utf-8") as f:
+                json.dump(allocations, f, indent=4)
         
         # Flatten the allocations
         all_tickers = []
@@ -58,7 +72,32 @@ class LivePipeline:
         approved_tickers = []
         total_count = len(all_tickers)
         for i, ticker in enumerate(all_tickers, 1):
-            is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)
+            if self.stop_requested:
+                logger.info("Stop requested. Halting init_portfolio.")
+                break
+
+            # Check if this ticker was already researched today
+            results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
+            log_file = results_dir / ticker / "TradingAgentsStrategy_logs" / f"full_states_log_{self.today}.json"
+            is_approved = False
+            
+            if log_file.exists():
+                logger.info(f"Skipping LLM for {ticker}. Saved report exists.")
+                import json
+                try:
+                    with open(log_file, "r", encoding="utf-8") as f:
+                        saved_state = json.load(f)
+                        decision = saved_state.get("final_trade_decision", "")
+                        is_approved = (decision.upper() == "BUY" or decision.upper() == "HOLD")
+                    # Update UI through callback if we have one, just simulating a fast run
+                    if self.research_fn:
+                        self.research_fn(ticker, full_analysts, self.checkpoint, i, total_count)
+                except Exception as e:
+                    logger.error(f"Error reading {log_file}: {e}")
+                    is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)
+            else:
+                is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)
+
             if is_approved:
                 approved_tickers.append(ticker)
             else:
@@ -82,6 +121,9 @@ class LivePipeline:
         
         total_count = len(holdings)
         for i, ticker in enumerate(holdings, 1):
+            if self.stop_requested:
+                logger.info("Stop requested. Halting quarterly_review.")
+                break
             is_approved = self._run_research(ticker, structural_analysts, current_index=i, total_count=total_count)
             if not is_approved:
                 logger.info(f"Structural thesis broken for {ticker}. Liquidating...")
@@ -106,6 +148,9 @@ class LivePipeline:
         
         total_count = len(holdings)
         for i, ticker in enumerate(holdings, 1):
+            if self.stop_requested:
+                logger.info("Stop requested. Halting weekly_monitor.")
+                break
             is_approved = self._run_research(ticker, catastrophe_analysts, current_index=i, total_count=total_count)
             if not is_approved:
                 logger.warning(f"CATASTROPHE DETECTED for {ticker}. Emergency Liquidation!")

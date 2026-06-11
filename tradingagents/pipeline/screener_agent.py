@@ -8,14 +8,22 @@ from tradingagents.default_config import DEFAULT_CONFIG
 
 logger = logging.getLogger(__name__)
 
-# A baseline universe of stocks to scan to avoid hitting yfinance rate limits
-# while scanning the entire 5000+ US equities.
+# A universe of Mid-Cap, Small-Cap, and High-Growth stocks to scan.
+# This avoids rate limits while providing "hidden gems" rather than just the Mega-Caps.
 BASELINE_UNIVERSE = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ORCL", "CRM",  # Tech/AI
-    "JNJ", "UNH", "PG", "KO", "PEP", "ABBV", "PFE", "MRK", "TMO", "MDT",             # Health/Consumer
-    "V", "MA", "JPM", "BAC", "AXP", "BLK", "GS", "MS", "C", "SPGI",                  # Financials/Infrastructure
-    "CAT", "DE", "HON", "GE", "LMT", "RTX", "BA", "UNP", "UPS", "FDX",               # Cyclicals/Industrials
-    "CRWD", "PLTR", "SNOW", "DDOG", "NET", "MDB", "SQ", "SHOP", "ROKU", "COIN"       # High Beta/Moonshots
+    # Tech / AI / SaaS / Cyber (Mid-Caps)
+    "PLTR", "CRWD", "SNOW", "DDOG", "NET", "MDB", "IOT", "CFLT", "ZS", "S", 
+    "MNDY", "ESTC", "FSLY", "U", "TOST", "FOUR", "APP",
+    # Consumer / E-Commerce / FinTech
+    "CELH", "ELF", "CROX", "YETI", "CAVA", "SG", "HOOD", "SOFI", "AFRM", 
+    "UPST", "SQ", "SHOP", "PINS", "ROKU", "CART", "DASH", "DKNG", "PENN",
+    # Industrials / Infrastructure / Space / Auto
+    "RKLB", "LUNR", "ASTS", "ACHR", "JOBY", "SYM", "WOLF", "QS", "LCID", 
+    "RIVN", "ENVX", "STEM", "FLNC", "CHPT", "IONQ", "RGTI",
+    # Crypto / High Beta Moonshots
+    "MSTR", "MARA", "RIOT", "CLSK", "COIN", "HOOD", "CVNA",
+    # Healthcare / Biotech
+    "CRSP", "NTLA", "EDIT", "BEAM", "PACB", "EXAS", "TDOC", "DNA"
 ]
 
 class ScreenerAgent:

@@ -40,21 +40,22 @@ class PipelineRequest(BaseModel):
     quick_model: Optional[str] = None
     deep_model: Optional[str] = None
 
-# Global state to prevent concurrent pipeline runs and hold progress
+# Global state for frontend polling
 live_state = {
     "is_running": False,
     "operation": None,
     "ticker": None,
     "current": 0,
     "total": 0,
-    "analysts": [],
-    "agent_status": {},
-    "reports": {},
     "progress": "",
+    "agent_status": {}, # e.g. {"market": "in_progress", "social": "pending"}
+    "reports": {},
     "llm_provider": None,
     "quick_model": None,
-    "deep_model": None
+    "deep_model": None,
 }
+
+CURRENT_PIPELINE = [None]
 
 def emit_event(event_type: str, data: Any):
     try:
@@ -183,7 +184,10 @@ def run_pipeline_task(operation: str, req: PipelineRequest):
     live_state["quick_model"] = req.quick_model
     live_state["deep_model"] = req.deep_model
     
+    global CURRENT_PIPELINE
     pipeline = LivePipeline(paper=req.paper, checkpoint=False, research_fn=api_research_callback)
+    CURRENT_PIPELINE[0] = pipeline
+    
     try:
         if operation == "init":
             pipeline.init_portfolio()
@@ -198,6 +202,7 @@ def run_pipeline_task(operation: str, req: PipelineRequest):
     finally:
         live_state["is_running"] = False
         live_state["operation"] = None
+        CURRENT_PIPELINE[0] = None
 
 @app.get("/api/pipeline/status")
 async def get_pipeline_status():
@@ -211,6 +216,13 @@ async def start_pipeline(operation: str, req: PipelineRequest, background_tasks:
         raise HTTPException(status_code=400, detail="Invalid operation")
     background_tasks.add_task(asyncio.to_thread, run_pipeline_task, operation, req)
     return {"status": "started", "operation": operation}
+
+@app.post("/api/pipeline/stop")
+async def stop_pipeline():
+    if not live_state["is_running"] or not CURRENT_PIPELINE[0]:
+        raise HTTPException(status_code=400, detail="Pipeline is not running")
+    CURRENT_PIPELINE[0].stop_requested = True
+    return {"status": "stop_requested"}
 
 @app.get("/api/portfolio")
 async def get_portfolio(paper: bool = True):
@@ -231,11 +243,10 @@ async def list_reports():
             strat_dir = ticker_dir / "TradingAgentsStrategy_logs"
             if strat_dir.exists():
                 dates = []
-                for f in strat_dir.glob("*_state.json"):
-                    # filename: MSFT_2026-06-11_state.json
-                    parts = f.name.replace("_state.json", "").split("_")
-                    if len(parts) >= 2:
-                        dates.append(parts[-1])
+                for f in strat_dir.glob("full_states_log_*.json"):
+                    # filename: full_states_log_2026-06-11.json
+                    date_part = f.name.replace("full_states_log_", "").replace(".json", "")
+                    dates.append(date_part)
                 if dates:
                     reports[ticker] = sorted(dates, reverse=True)
     return {"reports": reports}
@@ -243,7 +254,7 @@ async def list_reports():
 @app.get("/api/reports/{ticker}/{date}")
 async def get_report(ticker: str, date: str):
     results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
-    file_path = results_dir / ticker / "TradingAgentsStrategy_logs" / f"{ticker}_{date}_state.json"
+    file_path = results_dir / ticker / "TradingAgentsStrategy_logs" / f"full_states_log_{date}.json"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Report not found")
     with open(file_path, "r", encoding="utf-8") as f:
