@@ -46,7 +46,8 @@ function LiveResearch({ pipelineState }) {
     sse.onmessage = (e) => {
       try {
         const payload = JSON.parse(e.data);
-        const { event, data } = payload;
+        const event = payload.event;
+        const data = JSON.parse(payload.data);
         
         if (event === "pipeline_status") {
           setCurrentTicker(data.ticker);
