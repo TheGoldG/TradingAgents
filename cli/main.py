@@ -1541,6 +1541,7 @@ def run_gui_research_for_pipeline(
                 clear_checkpoint(config["data_cache_dir"], ticker, datetime.datetime.now().strftime("%Y-%m-%d"))
 
             # Log final state to disk
+            graph.ticker = ticker
             graph._log_state(datetime.datetime.now().strftime("%Y-%m-%d"), final_state)
 
             return decision.upper() == "BUY" or decision.upper() == "HOLD"
