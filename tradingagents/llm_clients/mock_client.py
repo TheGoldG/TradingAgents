@@ -16,12 +16,21 @@ class MockLLMClient(BaseLLMClient):
 
     def invoke(
         self,
-        prompt: str,
+        prompt: Any,
         system_prompt: Optional[str] = None,
         history: Optional[List[Dict[str, str]]] = None,
         **kwargs,
     ) -> AIMessage:
-        prompt_lower = prompt.lower()
+        if hasattr(self, "with_structured_output") and kwargs.get("is_structured"):
+            # Not fully supported mock, just string fallback
+            pass
+            
+        if isinstance(prompt, list):
+            prompt_str = " ".join([getattr(m, 'content', str(m)) for m in prompt])
+        else:
+            prompt_str = str(prompt)
+            
+        prompt_lower = prompt_str.lower()
         system_lower = system_prompt.lower() if system_prompt else ""
         
         # 1. Screener prompt matching
@@ -59,3 +68,9 @@ class MockLLMClient(BaseLLMClient):
     ) -> AIMessage:
         # Same logic for async
         return self.invoke(prompt, system_prompt, history, **kwargs)
+
+    def get_llm(self) -> Any:
+        return self
+
+    def validate_model(self) -> bool:
+        return True

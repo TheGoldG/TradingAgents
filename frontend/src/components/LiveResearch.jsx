@@ -107,6 +107,20 @@ function LiveResearch({ pipelineState }) {
     );
   }
 
+  if (!pipelineState.is_running && !currentTicker && Object.keys(reports).length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', padding: '4rem 2rem', textAlign: 'center' }}>
+        <div style={{ background: 'var(--bg-surface-hover)', padding: '1.5rem', borderRadius: '50%', marginBottom: '1rem' }}>
+          <Activity size={48} color="var(--accent)" />
+        </div>
+        <h2 style={{ margin: 0 }}>Ready to deploy AI Agents</h2>
+        <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', lineHeight: 1.6 }}>
+          Your Autonomous AI Hedge Fund is idle. Select an operation from the dropdown above and click <strong>Run</strong> to begin analyzing stocks and building your portfolio.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {/* Status Header */}
@@ -122,6 +136,16 @@ function LiveResearch({ pipelineState }) {
           )}
         </div>
       </div>
+
+      {pipelineState.error && (
+        <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', borderRadius: '8px', padding: '1rem', color: 'var(--danger)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            <ShieldAlert size={18} />
+            Pipeline Error
+          </div>
+          <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{pipelineState.error}</div>
+        </div>
+      )}
 
       {/* Agents Status Grid */}
       <div className="glass-panel">

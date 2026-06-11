@@ -1,15 +1,10 @@
-<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
   <style>
-    path { fill: #18181b; }
-    circle.bg { fill: #fafafa; }
-    circle.dot { fill: #71717a; }
+    path { stroke: #18181b; }
     @media (prefers-color-scheme: dark) {
-      path { fill: #ededed; }
-      circle.bg { fill: #000000; }
-      circle.dot { fill: #a1a1aa; }
+      path { stroke: #ededed; }
     }
   </style>
-  <path d="M8 32V16L20 8L32 16V32H24V22H16V32H8Z" />
-  <circle class="bg" cx="20" cy="14" r="4" />
-  <circle class="dot" cx="20" cy="14" r="2" />
+  <path d="M3 3v18h18"/>
+  <path d="m19 9-5 5-4-4-3 3"/>
 </svg>

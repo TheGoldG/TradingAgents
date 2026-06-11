@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import LiveResearch from './components/LiveResearch';
 import Portfolio from './components/Portfolio';
 import HistoricalReports from './components/HistoricalReports';
-import { Play, ShieldAlert, CalendarClock, LayoutDashboard, History, Sun, Moon } from 'lucide-react';
+import { Play, ShieldAlert, CalendarClock, LayoutDashboard, History, Sun, Moon, LineChart } from 'lucide-react';
 
 function App() {
   const PROVIDERS = [
@@ -29,7 +29,7 @@ function App() {
     },
     google: {
       quick: ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-      deep: ['gemini-3.1-pro', 'gemini-3.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash']
+      deep: ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash']
     },
     xai: {
       quick: ['grok-4.3', 'grok-build-0.1', 'grok-4-fast-non-reasoning'],
@@ -68,6 +68,8 @@ function App() {
   const [deepModel, setDeepModel] = useState(MODELS['google'].deep[0]);
 
   const [theme, setTheme] = useState('dark');
+  const [runType, setRunType] = useState('init');
+  const [stocksPerCategory, setStocksPerCategory] = useState(3);
 
   // Handle dark/light mode toggle
   useEffect(() => {
@@ -112,7 +114,8 @@ function App() {
         body: JSON.stringify({ 
           llm_provider: llmProvider, 
           quick_model: quickModel,
-          deep_model: deepModel
+          deep_model: deepModel,
+          stocks_per_category: parseInt(stocksPerCategory)
         })
       });
     } catch (e) {
@@ -134,12 +137,7 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <div className="app-header-logo">
-          <svg width="36" height="36" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* Minimalist geometric 'TA' / Chart Logo */}
-            <path d="M8 32V16L20 8L32 16V32H24V22H16V32H8Z" fill="var(--text-primary)" />
-            <circle cx="20" cy="14" r="4" fill="var(--bg-color)" />
-            <circle cx="20" cy="14" r="2" fill="var(--text-secondary)" />
-          </svg>
+          <LineChart size={32} color="var(--text-primary)" strokeWidth={2.5} />
           <h1>TradingAgents</h1>
           <span className="badge pending" style={{ marginLeft: '0.5rem' }}>AI Hedge Fund</span>
         </div>
@@ -172,19 +170,47 @@ function App() {
           </div>
 
           <div className="flex-row" style={{ alignItems: 'center', gap: '1rem' }}>
-            <button className="btn" onClick={() => triggerPipeline('init')} disabled={isRunning}>
-              <Play size={18} /> {isRunning && pipelineState.operation === 'init' ? 'Running...' : 'Init / Continue'}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <select 
+                value={runType} 
+                onChange={(e) => setRunType(e.target.value)}
+                disabled={isRunning}
+                style={{ padding: '0.5rem', fontWeight: 500 }}
+              >
+                <option value="init">Full Screener</option>
+                <option value="quarterly">Quarterly Review</option>
+                <option value="weekly">Weekly Risk Monitor</option>
+              </select>
+            </div>
+            
+            {runType === 'init' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <input 
+                  type="number" 
+                  min="1" max="10" 
+                  value={stocksPerCategory} 
+                  onChange={(e) => setStocksPerCategory(e.target.value)}
+                  disabled={isRunning}
+                  style={{ width: '80px', padding: '0.5rem', fontWeight: 500 }}
+                  title={`Stocks per category (Total Portfolio: ${stocksPerCategory * 5})`}
+                />
+              </div>
+            )}
+
+            <button className="btn" onClick={() => triggerPipeline(runType)} disabled={isRunning}>
+              <Play size={18} /> {isRunning ? 'Running...' : 'Run / Continue'}
             </button>
             <button className="btn btn-danger" onClick={stopPipeline} disabled={!isRunning}>
               Stop
             </button>
-            <button className="btn btn-secondary" onClick={() => triggerPipeline('quarterly')} disabled={isRunning}>
-              <CalendarClock size={18} /> Quarterly
-            </button>
-            <button className="btn btn-secondary" onClick={() => triggerPipeline('weekly')} disabled={isRunning}>
-              <ShieldAlert size={18} /> Weekly
-            </button>
           </div>
+        </div>
+
+        {/* Dynamic Helper Text for Run Action */}
+        <div style={{ padding: '0 0.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+          {runType === 'init' && "✨ Scans the entire market to build a fresh, high-conviction AI portfolio from scratch."}
+          {runType === 'quarterly' && "📊 Conducts a deep-dive fundamental review and restructuring of your existing holdings."}
+          {runType === 'weekly' && "🛡️ Quickly scans recent news and price action of your holdings to identify urgent risks."}
         </div>
 
         {/* LLM Configuration Row */}

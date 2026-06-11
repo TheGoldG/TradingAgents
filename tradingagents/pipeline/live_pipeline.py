@@ -40,11 +40,11 @@ class LivePipeline:
         logger.info(f"Research decision for {ticker}: {decision}")
         return decision.upper() == "BUY" or decision.upper() == "HOLD"
 
-    def init_portfolio(self):
+    def init_portfolio(self, stocks_per_category: int = 3):
         """
-        Builds the 15-stock Day One portfolio.
+        Builds the N-stock Day One portfolio.
         """
-        logger.info("Initializing 15-stock portfolio...")
+        logger.info(f"Initializing {stocks_per_category*5}-stock portfolio...")
         import os, json
         from pathlib import Path
         results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
@@ -56,7 +56,7 @@ class LivePipeline:
             with open(allocations_file, "r", encoding="utf-8") as f:
                 allocations = json.load(f)
         else:
-            allocations = self.screener.run_full_screen()
+            allocations = self.screener.run_full_screen(stocks_per_category)
             with open(allocations_file, "w", encoding="utf-8") as f:
                 json.dump(allocations, f, indent=4)
         

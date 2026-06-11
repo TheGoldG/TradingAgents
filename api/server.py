@@ -35,10 +35,11 @@ loop = None
 from pydantic import BaseModel
 
 class PipelineRequest(BaseModel):
+    llm_provider: str = "google"
     paper: bool = True
-    llm_provider: Optional[str] = None
     quick_model: Optional[str] = None
     deep_model: Optional[str] = None
+    stocks_per_category: int = 3
 
 # Global state for frontend polling
 live_state = {
@@ -53,6 +54,7 @@ live_state = {
     "llm_provider": None,
     "quick_model": None,
     "deep_model": None,
+    "error": None,
 }
 
 CURRENT_PIPELINE = [None]
@@ -179,6 +181,7 @@ def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, cu
 
 def run_pipeline_task(operation: str, req: PipelineRequest):
     live_state["is_running"] = True
+    live_state["error"] = None
     live_state["operation"] = operation
     live_state["llm_provider"] = req.llm_provider
     live_state["quick_model"] = req.quick_model
@@ -190,7 +193,7 @@ def run_pipeline_task(operation: str, req: PipelineRequest):
     
     try:
         if operation == "init":
-            pipeline.init_portfolio()
+            pipeline.init_portfolio(stocks_per_category=req.stocks_per_category)
         elif operation == "quarterly":
             pipeline.quarterly_review()
         elif operation == "weekly":
@@ -198,6 +201,7 @@ def run_pipeline_task(operation: str, req: PipelineRequest):
         emit_event("pipeline_complete", {"operation": operation, "status": "success"})
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
+        live_state["error"] = str(e)
         emit_event("pipeline_error", {"operation": operation, "error": str(e)})
     finally:
         live_state["is_running"] = False
