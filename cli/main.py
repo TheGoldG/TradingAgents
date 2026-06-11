@@ -256,11 +256,14 @@ def format_tokens(n):
     return str(n)
 
 
-def update_display(layout, spinner_text=None, stats_handler=None, start_time=None):
+def update_display(layout, spinner_text=None, stats_handler=None, start_time=None, title=None):
     # Header with welcome message
+    header_text = "[bold green]Welcome to TradingAgents CLI[/bold green]"
+    if title:
+        header_text = f"[bold green]{title}[/bold green]"
     layout["header"].update(
         Panel(
-            "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
+            f"{header_text}\n"
             "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
             title="Welcome to TradingAgents",
             border_style="green",
@@ -1305,6 +1308,253 @@ def analyze(
     run_analysis(checkpoint=checkpoint)
 
 
+def run_gui_research_for_pipeline(
+    ticker: str,
+    analysts: List[str],
+    checkpoint: bool = False,
+    current_index: int = 1,
+    total_count: int = 1,
+    operation_name: str = "Live Pipeline",
+) -> bool:
+    from rich.live import Live
+    from tradingagents.graph.checkpointer import thread_id
+
+    # Create config
+    config = DEFAULT_CONFIG.copy()
+    config["checkpoint_enabled"] = checkpoint
+
+    # Create stats callback handler
+    stats_handler = StatsCallbackHandler()
+
+    # Normalize analyst selection
+    selected_analyst_keys = [a for a in ANALYST_ORDER if a in analysts]
+    analyst_execution_plan = build_analyst_execution_plan(
+        selected_analyst_keys,
+        concurrency_limit=config["analyst_concurrency_limit"],
+    )
+    analyst_wall_time_tracker = AnalystWallTimeTracker(analyst_execution_plan)
+
+    # Initialize graph
+    graph = TradingAgentsGraph(
+        selected_analyst_keys,
+        config=config,
+        debug=True,
+        callbacks=[stats_handler],
+    )
+
+    # Initialize message buffer
+    message_buffer.init_for_analysis(selected_analyst_keys)
+
+    # Track start time
+    start_time = time.time()
+
+    # Title showing progress
+    title_text = f"TradingAgents - {operation_name} | Analyzing {ticker} ({current_index}/{total_count})"
+
+    # Start Rich layout
+    layout = create_layout()
+
+    # Define update wrappers (like in run_analysis)
+    results_dir = Path(config["results_dir"]) / ticker / datetime.datetime.now().strftime("%Y-%m-%d")
+    results_dir.mkdir(parents=True, exist_ok=True)
+    report_dir = results_dir / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    log_file = results_dir / "message_tool.log"
+    log_file.touch(exist_ok=True)
+
+    def save_message_decorator(obj, func_name):
+        func = getattr(obj, func_name)
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            func(*args, **kwargs)
+            timestamp, message_type, content = obj.messages[-1]
+            content = content.replace("\n", " ")
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"{timestamp} [{message_type}] {content}\n")
+        return wrapper
+
+    def save_tool_call_decorator(obj, func_name):
+        func = getattr(obj, func_name)
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            func(*args, **kwargs)
+            timestamp, tool_name, args = obj.tool_calls[-1]
+            args_str = ", ".join(f"{k}={v}" for k, v in args.items())
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(f"{timestamp} [Tool Call] {tool_name}({args_str})\n")
+        return wrapper
+
+    def save_report_section_decorator(obj, func_name):
+        func = getattr(obj, func_name)
+        @wraps(func)
+        def wrapper(section_name, content):
+            func(section_name, content)
+            if section_name in obj.report_sections and obj.report_sections[section_name] is not None:
+                content = obj.report_sections[section_name]
+                if content:
+                    file_name = f"{section_name}.md"
+                    text = "\n".join(str(item) for item in content) if isinstance(content, list) else content
+                    with open(report_dir / file_name, "w", encoding="utf-8") as f:
+                        f.write(text)
+        return wrapper
+
+    # Back up original methods before decoration
+    orig_add_message = message_buffer.add_message
+    orig_add_tool_call = message_buffer.add_tool_call
+    orig_update_report_section = message_buffer.update_report_section
+
+    message_buffer.add_message = save_message_decorator(message_buffer, "add_message")
+    message_buffer.add_tool_call = save_tool_call_decorator(message_buffer, "add_tool_call")
+    message_buffer.update_report_section = save_report_section_decorator(message_buffer, "update_report_section")
+
+    checkpointer_ctx = None
+    try:
+        # Recompile with checkpointer if checkpointing is enabled
+        if checkpoint:
+            from tradingagents.graph.checkpointer import get_checkpointer
+            checkpointer_ctx = get_checkpointer(config["data_cache_dir"], ticker)
+            saver = checkpointer_ctx.__enter__()
+            graph.graph = graph.workflow.compile(checkpointer=saver)
+
+        with Live(layout, refresh_per_second=4) as live:
+            # Initial display
+            update_display(layout, stats_handler=stats_handler, start_time=start_time, title=title_text)
+
+            message_buffer.add_message("System", f"Starting research for {ticker}...")
+            update_display(layout, stats_handler=stats_handler, start_time=start_time, title=title_text)
+
+            # Update agent status for the first analyst
+            first_analyst = get_initial_analyst_node(analyst_execution_plan)
+            message_buffer.update_agent_status(first_analyst, "in_progress")
+            analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
+            update_display(layout, stats_handler=stats_handler, start_time=start_time, title=title_text)
+
+            spinner_text = f"Analyzing {ticker} ({current_index}/{total_count})..."
+            update_display(layout, spinner_text, stats_handler=stats_handler, start_time=start_time, title=title_text)
+
+            # Resolve instrument context
+            instrument_context = graph.resolve_instrument_context(ticker, "stock")
+            init_agent_state = graph.propagator.create_initial_state(
+                ticker,
+                datetime.datetime.now().strftime("%Y-%m-%d"),
+                asset_type="stock",
+                instrument_context=instrument_context,
+            )
+            args = graph.propagator.get_graph_args(callbacks=[stats_handler])
+
+            # Inject thread_id for checkpoint/resume
+            if checkpoint:
+                tid = thread_id(ticker, datetime.datetime.now().strftime("%Y-%m-%d"))
+                args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
+
+            trace = []
+            for chunk in graph.graph.stream(init_agent_state, **args):
+                for message in chunk.get("messages", []):
+                    msg_id = getattr(message, "id", None)
+                    if msg_id is not None:
+                        if msg_id in message_buffer._processed_message_ids:
+                            continue
+                        message_buffer._processed_message_ids.add(msg_id)
+
+                    msg_type, content = classify_message_type(message)
+                    if content and content.strip():
+                        message_buffer.add_message(msg_type, content)
+
+                    if hasattr(message, "tool_calls") and message.tool_calls:
+                        for tool_call in message.tool_calls:
+                            if isinstance(tool_call, dict):
+                                message_buffer.add_tool_call(tool_call["name"], tool_call["args"])
+                            else:
+                                message_buffer.add_tool_call(tool_call.name, tool_call.args)
+
+                update_analyst_statuses(message_buffer, chunk, wall_time_tracker=analyst_wall_time_tracker)
+
+                # Debate & Team status logic
+                if chunk.get("investment_debate_state"):
+                    debate_state = chunk["investment_debate_state"]
+                    bull_hist = debate_state.get("bull_history", "").strip()
+                    bear_hist = debate_state.get("bear_history", "").strip()
+                    judge = debate_state.get("judge_decision", "").strip()
+
+                    if bull_hist or bear_hist:
+                        update_research_team_status("in_progress")
+                    if bull_hist:
+                        message_buffer.update_report_section("investment_plan", f"### Bull Researcher Analysis\n{bull_hist}")
+                    if bear_hist:
+                        message_buffer.update_report_section("investment_plan", f"### Bear Researcher Analysis\n{bear_hist}")
+                    if judge:
+                        message_buffer.update_report_section("investment_plan", f"### Research Manager Decision\n{judge}")
+                        update_research_team_status("completed")
+                        message_buffer.update_agent_status("Trader", "in_progress")
+
+                if chunk.get("trader_investment_plan"):
+                    message_buffer.update_report_section("trader_investment_plan", chunk["trader_investment_plan"])
+                    if message_buffer.agent_status.get("Trader") != "completed":
+                        message_buffer.update_agent_status("Trader", "completed")
+                        message_buffer.update_agent_status("Aggressive Analyst", "in_progress")
+
+                if chunk.get("risk_debate_state"):
+                    risk_state = chunk["risk_debate_state"]
+                    agg_hist = risk_state.get("aggressive_history", "").strip()
+                    con_hist = risk_state.get("conservative_history", "").strip()
+                    neu_hist = risk_state.get("neutral_history", "").strip()
+                    judge = risk_state.get("judge_decision", "").strip()
+
+                    if agg_hist:
+                        if message_buffer.agent_status.get("Aggressive Analyst") != "completed":
+                            message_buffer.update_agent_status("Aggressive Analyst", "in_progress")
+                        message_buffer.update_report_section("final_trade_decision", f"### Aggressive Analyst Analysis\n{agg_hist}")
+                    if con_hist:
+                        if message_buffer.agent_status.get("Conservative Analyst") != "completed":
+                            message_buffer.update_agent_status("Conservative Analyst", "in_progress")
+                        message_buffer.update_report_section("final_trade_decision", f"### Conservative Analyst Analysis\n{con_hist}")
+                    if neu_hist:
+                        if message_buffer.agent_status.get("Neutral Analyst") != "completed":
+                            message_buffer.update_agent_status("Neutral Analyst", "in_progress")
+                        message_buffer.update_report_section("final_trade_decision", f"### Neutral Analyst Analysis\n{neu_hist}")
+                    if judge:
+                        if message_buffer.agent_status.get("Portfolio Manager") != "completed":
+                            message_buffer.update_agent_status("Portfolio Manager", "in_progress")
+                            message_buffer.update_report_section("final_trade_decision", f"### Portfolio Manager Decision\n{judge}")
+                            message_buffer.update_agent_status("Aggressive Analyst", "completed")
+                            message_buffer.update_agent_status("Conservative Analyst", "completed")
+                            message_buffer.update_agent_status("Neutral Analyst", "completed")
+                            message_buffer.update_agent_status("Portfolio Manager", "completed")
+
+                update_display(layout, stats_handler=stats_handler, start_time=start_time, title=title_text)
+                trace.append(chunk)
+
+            final_state = {}
+            for chunk in trace:
+                final_state.update(chunk)
+            decision = graph.process_signal(final_state["final_trade_decision"])
+
+            for agent in message_buffer.agent_status:
+                message_buffer.update_agent_status(agent, "completed")
+
+            message_buffer.add_message("System", f"Completed analysis for {ticker}")
+            update_display(layout, stats_handler=stats_handler, start_time=start_time, title=title_text)
+
+            # Clear checkpoint if successful
+            if checkpoint:
+                from tradingagents.graph.checkpointer import clear_checkpoint
+                clear_checkpoint(config["data_cache_dir"], ticker, datetime.datetime.now().strftime("%Y-%m-%d"))
+
+            # Log final state to disk
+            graph._log_state(datetime.datetime.now().strftime("%Y-%m-%d"), final_state)
+
+            return decision.upper() == "BUY" or decision.upper() == "HOLD"
+    finally:
+        # Restore original functions to keep message_buffer clean
+        message_buffer.add_message = orig_add_message
+        message_buffer.add_tool_call = orig_add_tool_call
+        message_buffer.update_report_section = orig_update_report_section
+
+        if checkpointer_ctx is not None:
+            checkpointer_ctx.__exit__(None, None, None)
+            graph.graph = graph.workflow.compile()
+
+
 @app.command()
 def live(
     init: bool = typer.Option(False, "--init", help="Initialize the 15-stock Day One portfolio"),
@@ -1315,9 +1565,28 @@ def live(
 ):
     """Run the Live Trading Pipeline operations."""
     from tradingagents.pipeline.live_pipeline import LivePipeline
-    
-    pipeline = LivePipeline(paper=paper, checkpoint=checkpoint)
-    
+
+    # Define a callback that runs the research within our custom GUI loop
+    def research_callback(ticker, analysts, checkpoint, current_idx, total):
+        op_name = "Live Pipeline"
+        if init:
+            op_name = "Portfolio Init"
+        elif quarterly_review:
+            op_name = "Quarterly Review"
+        elif weekly_monitor:
+            op_name = "Weekly Monitor"
+            
+        return run_gui_research_for_pipeline(
+            ticker=ticker,
+            analysts=analysts,
+            checkpoint=checkpoint,
+            current_index=current_idx,
+            total_count=total,
+            operation_name=op_name
+        )
+
+    pipeline = LivePipeline(paper=paper, checkpoint=checkpoint, research_fn=research_callback)
+
     if init:
         pipeline.init_portfolio()
     elif quarterly_review:
@@ -1326,6 +1595,7 @@ def live(
         pipeline.weekly_monitor()
     else:
         console.print("[yellow]Please specify an operation: --init, --quarterly-review, or --weekly-monitor[/yellow]")
+
 
 if __name__ == "__main__":
     app()

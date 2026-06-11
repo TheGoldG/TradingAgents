@@ -11,20 +11,24 @@ from tradingagents.pipeline.portfolio_manager import PortfolioManager
 logger = logging.getLogger(__name__)
 
 class LivePipeline:
-    def __init__(self, paper: bool = True, checkpoint: bool = False):
+    def __init__(self, paper: bool = True, checkpoint: bool = False, research_fn = None):
         self.screener = ScreenerAgent()
         self.executor = AlpacaExecutorAgent(paper=paper)
         self.portfolio = PortfolioManager(paper=paper)
         self.today = datetime.now().strftime("%Y-%m-%d")
         self.checkpoint = checkpoint
+        self.research_fn = research_fn
 
-    def _run_research(self, ticker: str, analysts: List[str]) -> bool:
+    def _run_research(self, ticker: str, analysts: List[str], current_index: int = 1, total_count: int = 1) -> bool:
         """
         Runs the TradingAgents graph with the specified analysts and returns True if BUY, False otherwise.
         """
-        logger.info(f"Running research for {ticker} using analysts: {analysts}")
+        logger.info(f"Running research for {ticker} ({current_index}/{total_count}) using analysts: {analysts}")
         
-        # Override config to use only the selected analysts for this run
+        if self.research_fn:
+            return self.research_fn(ticker, analysts, self.checkpoint, current_index, total_count)
+            
+        # Fallback to non-GUI mode
         config = DEFAULT_CONFIG.copy()
         if self.checkpoint:
             config["checkpoint_enabled"] = True
@@ -52,8 +56,9 @@ class LivePipeline:
         full_analysts = ["market", "social", "news", "fundamentals"]
         
         approved_tickers = []
-        for ticker in all_tickers:
-            is_approved = self._run_research(ticker, full_analysts)
+        total_count = len(all_tickers)
+        for i, ticker in enumerate(all_tickers, 1):
+            is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)
             if is_approved:
                 approved_tickers.append(ticker)
             else:
@@ -75,8 +80,9 @@ class LivePipeline:
         # Structural analysts only
         structural_analysts = ["fundamentals", "news"]
         
-        for ticker in holdings:
-            is_approved = self._run_research(ticker, structural_analysts)
+        total_count = len(holdings)
+        for i, ticker in enumerate(holdings, 1):
+            is_approved = self._run_research(ticker, structural_analysts, current_index=i, total_count=total_count)
             if not is_approved:
                 logger.info(f"Structural thesis broken for {ticker}. Liquidating...")
                 self.executor.execute_sell(ticker)
@@ -98,8 +104,9 @@ class LivePipeline:
         # News only for catastrophes
         catastrophe_analysts = ["news"]
         
-        for ticker in holdings:
-            is_approved = self._run_research(ticker, catastrophe_analysts)
+        total_count = len(holdings)
+        for i, ticker in enumerate(holdings, 1):
+            is_approved = self._run_research(ticker, catastrophe_analysts, current_index=i, total_count=total_count)
             if not is_approved:
                 logger.warning(f"CATASTROPHE DETECTED for {ticker}. Emergency Liquidation!")
                 self.executor.execute_sell(ticker)
