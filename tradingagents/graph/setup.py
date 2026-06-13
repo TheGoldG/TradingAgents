@@ -12,19 +12,30 @@ from .conditional_logic import ConditionalLogic
 
 
 class GraphSetup:
-    """Handles the setup and configuration of the agent graph."""
+    """Handles the creation and compilation of the trading agents graph."""
 
     def __init__(
         self,
         quick_thinking_llm: Any,
         deep_thinking_llm: Any,
+        execution_thinking_llm: Any,
         tool_nodes: Dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
         analyst_concurrency_limit: int = 1,
     ):
-        """Initialize with required components."""
+        """Initialize GraphSetup with dependencies.
+
+        Args:
+            quick_thinking_llm: LLM for fast tasks (analysts)
+            deep_thinking_llm: LLM for complex tasks (managers/synthesis)
+            execution_thinking_llm: LLM for execution tasks (trader, portfolio manager, risk)
+            tool_nodes: Dictionary of tool nodes
+            conditional_logic: ConditionalLogic instance
+            analyst_concurrency_limit: Max number of concurrent analysts
+        """
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
+        self.execution_thinking_llm = execution_thinking_llm
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
         self.analyst_concurrency_limit = analyst_concurrency_limit
@@ -57,13 +68,13 @@ class GraphSetup:
         bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
         bear_researcher_node = create_bear_researcher(self.quick_thinking_llm)
         research_manager_node = create_research_manager(self.deep_thinking_llm)
-        trader_node = create_trader(self.quick_thinking_llm)
+        trader_node = create_trader(self.execution_thinking_llm)
 
         # Create risk analysis nodes
-        aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
-        neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
-        conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
-        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
+        aggressive_analyst = create_aggressive_debator(self.execution_thinking_llm)
+        neutral_analyst = create_neutral_debator(self.execution_thinking_llm)
+        conservative_analyst = create_conservative_debator(self.execution_thinking_llm)
+        portfolio_manager_node = create_portfolio_manager(self.execution_thinking_llm)
 
         # Create workflow
         workflow = StateGraph(AgentState)

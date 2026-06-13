@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Activity, CheckCircle, Clock, ShieldAlert } from 'lucide-react';
+import { Activity, CheckCircle, Clock, ShieldAlert, ArrowRight } from 'lucide-react';
+import TagInput from './TagInput';
 
 function StatusIcon({ status }) {
   if (status === 'completed') return <CheckCircle size={16} style={{ color: 'var(--success)' }} />;
@@ -11,18 +12,29 @@ function StatusIcon({ status }) {
 function ReportCard({ title, content }) {
   if (!content) return null;
   return (
-    <div className="glass-panel" style={{ marginTop: '1rem' }}>
-      <h3 style={{ color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+    <div className="data-card" style={{ marginTop: '1rem' }}>
+      <h3 style={{ color: 'var(--accent-color)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem', fontSize: '1.1rem' }}>
         {title}
       </h3>
-      <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+      <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
         <ReactMarkdown>{content}</ReactMarkdown>
       </div>
     </div>
   );
 }
 
-function LiveResearch({ pipelineState }) {
+function LiveResearch({ 
+  llmProvider,
+  quickModel,
+  setQuickModel,
+  deepModel,
+  setDeepModel,
+  MODELS,
+  pipelineState, 
+  onRunResearch, 
+  onProceedToExecutor, 
+  screenerTickers 
+}) {
   const [currentTicker, setCurrentTicker] = useState(pipelineState.ticker || null);
   const [analysts, setAnalysts] = useState(pipelineState.analysts || []);
   const [agentStatus, setAgentStatus] = useState(pipelineState.agent_status || {});
@@ -37,6 +49,13 @@ function LiveResearch({ pipelineState }) {
       setAgentStatus(pipelineState.agent_status || {});
       setReports(pipelineState.reports || {});
       setProgress(pipelineState.progress || '');
+    }
+
+    if (!pipelineState.is_running && pipelineState.reports && Object.keys(pipelineState.reports).length > 0) {
+       setReports(pipelineState.reports);
+       setCurrentTicker(pipelineState.ticker);
+       setAnalysts(pipelineState.analysts || []);
+       setAgentStatus(pipelineState.agent_status || {});
     }
   }, [pipelineState]);
 
@@ -98,31 +117,97 @@ function LiveResearch({ pipelineState }) {
     return () => sse.close();
   }, []);
 
-  if (!pipelineState.is_running && !currentTicker) {
-    return (
-      <div className="glass-panel" style={{ flex: 1, textAlign: 'center', padding: '4rem 2rem' }}>
-        <h2 style={{ color: 'var(--text-secondary)' }}>System is Idle</h2>
-        <p>Select an operation above to begin autonomous research.</p>
-      </div>
-    );
-  }
+  const [customInput, setCustomInput] = useState([]);
 
-  if (!pipelineState.is_running && !currentTicker && Object.keys(reports).length === 0) {
-    return (
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem', padding: '4rem 2rem', textAlign: 'center' }}>
-        <div style={{ background: 'var(--bg-surface-hover)', padding: '1.5rem', borderRadius: '50%', marginBottom: '1rem' }}>
-          <Activity size={48} color="var(--accent)" />
-        </div>
-        <h2 style={{ margin: 0 }}>Ready to deploy AI Agents</h2>
-        <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', lineHeight: 1.6 }}>
-          Your Autonomous AI Hedge Fund is idle. Select an operation from the dropdown above and click <strong>Run</strong> to begin analyzing stocks and building your portfolio.
-        </p>
-      </div>
-    );
-  }
+  const isIdle = !pipelineState.is_running && !currentTicker && Object.keys(reports).length === 0;
+  const hasScreenerTickers = screenerTickers && screenerTickers.length > 0;
+  const isResearchFinished = !pipelineState.is_running && Object.keys(reports).length > 0;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {/* Configuration Header */}
+      <div className="data-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h2 style={{ margin: 0, marginBottom: '0.5rem', fontSize: '1.25rem' }}>Step 2: Live Research Team</h2>
+            <p className="text-sm" style={{ margin: 0, color: 'var(--text-secondary)' }}>
+              Deploys a team of 4 specialized AI agents to conduct deep-dive fundamental and news assessment.
+            </p>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Research Quick</label>
+              <select value={quickModel} onChange={e => setQuickModel(e.target.value)} disabled={pipelineState.is_running} className="modern-select">
+                {MODELS[llmProvider].quick.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Research Deep</label>
+              <select value={deepModel} onChange={e => setDeepModel(e.target.value)} disabled={pipelineState.is_running} className="modern-select">
+                {MODELS[llmProvider].deep.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {isIdle ? (
+        <div className="data-card" style={{ padding: '3rem 2rem' }}>
+          {hasScreenerTickers ? (
+            <div className="flex-col" style={{ gap: '1.5rem' }}>
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '1rem' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                  Tickers Passed from Screener
+                </div>
+                <div className="flex-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {screenerTickers.map(t => <span key={t} className="badge pending" style={{ fontWeight: 600 }}>{t}</span>)}
+                </div>
+              </div>
+              
+              <button 
+                className="btn" 
+                onClick={() => onRunResearch(screenerTickers)}
+                style={{ background: 'var(--success)', color: '#ffffff', alignSelf: 'flex-start', border: 'none' }}
+              >
+                Start Research on {screenerTickers.length} Stocks
+              </button>
+            </div>
+          ) : (
+            <div className="flex-col" style={{ gap: '1.5rem' }}>
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '1rem' }}>
+                <h4 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>No Screened Stocks Loaded</h4>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Run Step 1 (Screener) first, or enter custom tickers below to run research directly.</p>
+              </div>
+              
+              <div className="flex-row" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1, minWidth: '200px' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                    Enter Tickers (Press Enter)
+                  </label>
+                  <TagInput 
+                    tags={customInput} 
+                    setTags={setCustomInput} 
+                    placeholder="e.g. AAPL, MSFT, TSLA" 
+                  />
+                </div>
+                <button 
+                  className="btn" 
+                  onClick={() => {
+                    if (customInput.length > 0) onRunResearch(customInput);
+                  }}
+                  disabled={customInput.length === 0}
+                  style={{ background: 'var(--accent-color)', color: 'var(--accent-text)', border: 'none' }}
+                >
+                  Start Research
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+
       {/* Status Header */}
       <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -148,33 +233,39 @@ function LiveResearch({ pipelineState }) {
       )}
 
       {/* Agents Status Grid */}
-      <div className="glass-panel">
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>Active Agents</h3>
+      <div className="data-card">
+        <h3 style={{ marginTop: 0, marginBottom: '0.5rem', fontSize: '1.1rem' }}>Active Agents</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem' }}>
           {analysts.map(agent => (
-            <div key={agent} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px' }}>
+            <div key={agent} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
               <StatusIcon status={agentStatus[agent]} />
-              <span style={{ textTransform: 'capitalize' }}>{agent} Analyst</span>
+              <span style={{ textTransform: 'capitalize', fontWeight: 500, fontSize: '0.9rem' }}>{agent} Analyst</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* Reports Stack */}
-      <ReportCard title="Market Analysis" content={reports.market_report} />
-      <ReportCard title="Social Sentiment" content={reports.sentiment_report} />
-      <ReportCard title="News Analysis" content={reports.news_report} />
-      <ReportCard title="Fundamentals Analysis" content={reports.fundamentals_report} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+        <ReportCard title="Market Analysis" content={reports.market_report} />
+        <ReportCard title="Social Sentiment" content={reports.sentiment_report} />
+        <ReportCard title="News Analysis" content={reports.news_report} />
+        <ReportCard title="Fundamentals Analysis" content={reports.fundamentals_report} />
+      </div>
       
       {reports.debate && (
-         <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-            <div className="glass-panel" style={{ flex: 1, borderLeft: '4px solid var(--success)' }}>
-               <h4 style={{ color: 'var(--success)' }}>Bull Thesis</h4>
-               <ReactMarkdown>{reports.debate.bull}</ReactMarkdown>
+         <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+            <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--success)' }}>
+               <h4 style={{ color: 'var(--success)', marginBottom: '0.75rem' }}>Bull Thesis</h4>
+               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                 <ReactMarkdown>{reports.debate.bull}</ReactMarkdown>
+               </div>
             </div>
-            <div className="glass-panel" style={{ flex: 1, borderLeft: '4px solid var(--danger)' }}>
-               <h4 style={{ color: 'var(--danger)' }}>Bear Thesis</h4>
-               <ReactMarkdown>{reports.debate.bear}</ReactMarkdown>
+            <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--danger)' }}>
+               <h4 style={{ color: 'var(--danger)', marginBottom: '0.75rem' }}>Bear Thesis</h4>
+               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                 <ReactMarkdown>{reports.debate.bear}</ReactMarkdown>
+               </div>
             </div>
          </div>
       )}
@@ -186,6 +277,19 @@ function LiveResearch({ pipelineState }) {
       <ReportCard title="Trading Team Plan" content={reports.trader_investment_plan || reports.investment_plan} />
       <ReportCard title="Final Decision" content={reports.final_trade_decision} />
 
+      {isResearchFinished && (
+        <div className="data-card" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem', background: 'var(--bg-surface)' }}>
+          <button 
+            className="btn" 
+            onClick={onProceedToExecutor}
+            style={{ background: 'var(--success)', color: '#ffffff', gap: '0.5rem' }}
+          >
+            Proceed to Execution Step <ArrowRight size={16} />
+          </button>
+        </div>
+      )}
+        </>
+      )}
     </div>
   );
 }

@@ -5,11 +5,11 @@ import { Search, ChevronDown, ChevronRight } from 'lucide-react';
 function ReportCard({ title, content }) {
   if (!content) return null;
   return (
-    <div className="glass-panel" style={{ marginTop: '1rem' }}>
-      <h3 style={{ color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+    <div className="data-card" style={{ marginTop: '1rem' }}>
+      <h3 style={{ color: 'var(--accent-color)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem', fontSize: '1.1rem' }}>
         {title}
       </h3>
-      <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.5' }}>
+      <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
         <ReactMarkdown>{content}</ReactMarkdown>
       </div>
     </div>
@@ -65,56 +65,64 @@ function HistoricalReports() {
     <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
       
       {/* Sidebar */}
-      <div className="glass-panel" style={{ width: '250px', flexShrink: 0 }}>
-        <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Search size={18} /> Researched Stocks
+      {/* Sidebar List */}
+      <div className="data-card" style={{ width: '280px', flexShrink: 0, maxHeight: '80vh', overflowY: 'auto', padding: '1rem' }}>
+        <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem', color: 'var(--text-primary)', fontSize: '1.1rem' }}>
+          Saved Reports
         </h3>
         
         {Object.keys(reportsMenu).length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>No history found.</p>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '2rem 0' }}>
+            No reports found
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {Object.entries(reportsMenu).map(([ticker, dates]) => {
+            {Object.keys(reportsMenu).sort().map(ticker => {
+              const dates = reportsMenu[ticker];
               const isExpanded = expandedFolders[ticker];
               return (
                 <div key={ticker}>
                   <div 
                     onClick={() => toggleFolder(ticker)}
                     style={{ 
-                      fontWeight: 'bold', 
-                      color: 'var(--text-primary)', 
-                      marginBottom: '0.25rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      cursor: 'pointer',
-                      padding: '0.25rem',
-                      borderRadius: '4px',
-                      userSelect: 'none'
+                      display: 'flex', alignItems: 'center', gap: '0.5rem', 
+                      padding: '0.5rem', cursor: 'pointer', borderRadius: '4px',
+                      background: isExpanded ? 'var(--bg-surface-hover)' : 'transparent',
+                      color: 'var(--text-primary)', fontWeight: 600
                     }}
                   >
                     {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    {ticker}
+                    {ticker} <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 400 }}>({dates.length})</span>
                   </div>
-                  {isExpanded && dates.map(date => (
-                    <button 
-                      key={date}
-                      onClick={() => handleSelect(ticker, date)}
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '0.5rem',
-                        paddingLeft: '2rem',
-                        background: selectedTicker === ticker && selectedDate === date ? 'rgba(255,255,255,0.1)' : 'transparent',
-                        border: 'none',
-                        color: 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        borderRadius: '4px'
-                      }}
-                    >
-                      {date}
-                    </button>
-                  ))}
+                  
+                  {isExpanded && (
+                    <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: '1.5rem', marginTop: '0.25rem', gap: '0.25rem' }}>
+                      {dates.map(date => {
+                        // date might be "YYYY-MM-DD" or "SCREENER_REPORT"
+                        const isScreener = date === "SCREENER_REPORT";
+                        const displayDate = isScreener ? "Screener Analysis" : date;
+                        const isSelected = selectedTicker === ticker && selectedDate === date;
+                        
+                        return (
+                          <div 
+                            key={date}
+                            onClick={() => handleSelect(ticker, date)}
+                            style={{ 
+                              padding: '0.5rem 0.75rem', 
+                              cursor: 'pointer', 
+                              borderRadius: '4px',
+                              fontSize: '0.85rem',
+                              color: isSelected ? 'var(--accent-color)' : 'var(--text-secondary)',
+                              background: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                              fontWeight: isSelected ? 500 : 400
+                            }}
+                          >
+                            {displayDate}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -125,34 +133,70 @@ function HistoricalReports() {
       {/* Viewer */}
       <div style={{ flex: 1 }}>
         {!selectedTicker ? (
-          <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem' }}>
+          <div className="data-card" style={{ textAlign: 'center', padding: '4rem' }}>
             <h2 style={{ color: 'var(--text-secondary)' }}>Select a report to view</h2>
           </div>
         ) : !reportData ? (
-          <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem' }}>
+          <div className="data-card" style={{ textAlign: 'center', padding: '4rem' }}>
             <h2>Loading...</h2>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div className="glass-panel">
+            <div className="data-card">
               <h2 style={{ margin: 0, color: 'var(--text-primary)' }}>{selectedTicker}</h2>
               <p style={{ margin: 0, color: 'var(--text-secondary)' }}>Report Date: {selectedDate}</p>
             </div>
 
-            <ReportCard title="Market Analysis" content={reportData.market_report} />
-            <ReportCard title="Social Sentiment" content={reportData.sentiment_report} />
-            <ReportCard title="News Analysis" content={reportData.news_report} />
-            <ReportCard title="Fundamentals Analysis" content={reportData.fundamentals_report} />
+            {reportData.reasoning && (
+              <ReportCard title="Screener Thought Process" content={reportData.reasoning} />
+            )}
+
+            {reportData.selections && (
+              <div className="data-card" style={{ marginTop: '1rem' }}>
+                <h3 style={{ color: 'var(--accent-color)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem', fontSize: '1.1rem' }}>
+                  Moat Filter Selections
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+                  {Object.entries(reportData.selections).map(([category, tickers]) => (
+                    <div 
+                      key={category} 
+                      style={{ 
+                        padding: '1rem', 
+                        background: 'var(--bg-surface)', 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: '6px' 
+                      }}
+                    >
+                      <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontSize: '0.9rem' }}>{category}</h4>
+                      <div className="flex-row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {tickers.map(t => <span key={t} className="badge pending" style={{ fontWeight: 600 }}>{t}</span>)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+              <ReportCard title="Market Analysis" content={reportData.market_report} />
+              <ReportCard title="Social Sentiment" content={reportData.sentiment_report} />
+              <ReportCard title="News Analysis" content={reportData.news_report} />
+              <ReportCard title="Fundamentals Analysis" content={reportData.fundamentals_report} />
+            </div>
             
             {reportData.investment_debate_state && (
-               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                  <div className="glass-panel" style={{ flex: 1, borderLeft: '4px solid var(--success)' }}>
-                     <h4 style={{ color: 'var(--success)' }}>Bull Thesis</h4>
-                     <ReactMarkdown>{reportData.investment_debate_state.bull_history}</ReactMarkdown>
+               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                  <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--success)' }}>
+                     <h4 style={{ color: 'var(--success)', marginBottom: '0.75rem' }}>Bull Thesis</h4>
+                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                       <ReactMarkdown>{reportData.investment_debate_state.bull_history}</ReactMarkdown>
+                     </div>
                   </div>
-                  <div className="glass-panel" style={{ flex: 1, borderLeft: '4px solid var(--danger)' }}>
-                     <h4 style={{ color: 'var(--danger)' }}>Bear Thesis</h4>
-                     <ReactMarkdown>{reportData.investment_debate_state.bear_history}</ReactMarkdown>
+                  <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--danger)' }}>
+                     <h4 style={{ color: 'var(--danger)', marginBottom: '0.75rem' }}>Bear Thesis</h4>
+                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                       <ReactMarkdown>{reportData.investment_debate_state.bear_history}</ReactMarkdown>
+                     </div>
                   </div>
                </div>
             )}

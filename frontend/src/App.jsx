@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import LiveResearch from './components/LiveResearch';
 import Portfolio from './components/Portfolio';
 import HistoricalReports from './components/HistoricalReports';
-import { Play, ShieldAlert, CalendarClock, LayoutDashboard, History, Sun, Moon, LineChart } from 'lucide-react';
+import Screener from './components/Screener';
+import Executor from './components/Executor';
+import { Play, ShieldAlert, ShieldCheck, LayoutDashboard, History, Sun, Moon, LineChart, Search, Activity } from 'lucide-react';
 
 function App() {
   const PROVIDERS = [
@@ -63,9 +65,14 @@ function App() {
 
   const [pipelineState, setPipelineState] = useState({ is_running: false, operation: null });
   const [activeTab, setActiveTab] = useState('live');
+  const [step, setStep] = useState('screener');
+  const [screenerTickers, setScreenerTickers] = useState([]);
+  
   const [llmProvider, setLlmProvider] = useState('google');
+  const [screenerModel, setScreenerModel] = useState(MODELS['google'].quick[0]);
   const [quickModel, setQuickModel] = useState(MODELS['google'].quick[0]);
   const [deepModel, setDeepModel] = useState(MODELS['google'].deep[0]);
+  const [executionModel, setExecutionModel] = useState(MODELS['google'].deep[0]);
 
   const [theme, setTheme] = useState('dark');
   const [runType, setRunType] = useState('init');
@@ -84,8 +91,10 @@ function App() {
   const handleProviderChange = (e) => {
     const newProvider = e.target.value;
     setLlmProvider(newProvider);
+    setScreenerModel(MODELS[newProvider].quick[0]);
     setQuickModel(MODELS[newProvider].quick[0]);
     setDeepModel(MODELS[newProvider].deep[0]);
+    setExecutionModel(MODELS[newProvider].deep[0]);
   };
 
   // Poll backend for pipeline status
@@ -104,19 +113,32 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const triggerPipeline = async (operation) => {
+  const triggerPipeline = async (operation, tickers = null) => {
     setPipelineState({ is_running: true, operation });
     setActiveTab('live');
+    
+    // Automatically redirect maintenance operations to research step
+    if (operation === 'quarterly' || operation === 'weekly') {
+      setStep('research');
+    }
+    
     try {
+      const body = { 
+        llm_provider: llmProvider, 
+        screener_model: screenerModel,
+        quick_model: quickModel,
+        deep_model: deepModel,
+        execution_model: executionModel,
+        stocks_per_category: parseInt(stocksPerCategory)
+      };
+      if (tickers) {
+        body.custom_tickers = tickers.join(',');
+      }
+      
       await fetch(`http://localhost:8000/api/pipeline/${operation}?paper=true`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          llm_provider: llmProvider, 
-          quick_model: quickModel,
-          deep_model: deepModel,
-          stocks_per_category: parseInt(stocksPerCategory)
-        })
+        body: JSON.stringify(body)
       });
     } catch (e) {
       console.error("Failed to start pipeline", e);
@@ -134,144 +156,212 @@ function App() {
   const isRunning = pipelineState.is_running;
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <div className="app-header-logo">
-          <LineChart size={32} color="var(--text-primary)" strokeWidth={2.5} />
-          <h1>TradingAgents</h1>
-          <span className="badge pending" style={{ marginLeft: '0.5rem' }}>AI Hedge Fund</span>
+    <div className="app-layout">
+      {/* Sidebar Navigation */}
+      <aside className="sidebar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '3rem' }}>
+          <LineChart size={28} color="var(--accent-color)" strokeWidth={2.5} />
+          <h1 style={{ fontSize: '1.25rem', margin: 0, fontFamily: 'Outfit, sans-serif' }}>TradingAgents</h1>
         </div>
-        <button 
-          className="btn btn-secondary" 
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-          title="Toggle Theme"
-          style={{ padding: '0.5rem', borderRadius: '50%' }}
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-      </header>
+        
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+          <button 
+            className={`btn ${activeTab !== 'live' ? 'btn-secondary' : ''}`}
+            onClick={() => setActiveTab('live')}
+            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+          >
+            <LayoutDashboard size={18} /> Research
+          </button>
+          <button 
+            className={`btn ${activeTab !== 'maintenance' ? 'btn-secondary' : ''}`}
+            onClick={() => setActiveTab('maintenance')}
+            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+          >
+            <ShieldCheck size={18} /> Risk & Maintenance
+          </button>
+          <button 
+            className={`btn ${activeTab !== 'history' ? 'btn-secondary' : ''}`}
+            onClick={() => setActiveTab('history')}
+            style={{ justifyContent: 'flex-start', padding: '0.75rem 1rem' }}
+          >
+            <History size={18} /> Historical Reports
+          </button>
+        </nav>
 
-      {/* Main Control Panel */}
-      <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-          <div className="flex-row">
-            <button 
-              className={`btn ${activeTab !== 'live' ? 'btn-secondary' : ''}`}
-              onClick={() => setActiveTab('live')}
-            >
-              <LayoutDashboard size={18} /> Live Dashboard
-            </button>
-            <button 
-              className={`btn ${activeTab !== 'history' ? 'btn-secondary' : ''}`}
-              onClick={() => setActiveTab('history')}
-            >
-              <History size={18} /> Historical Reports
-            </button>
-          </div>
+        <div style={{ marginTop: 'auto', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            style={{ width: '100%', justifyContent: 'center' }}
+          >
+            {theme === 'dark' ? <><Sun size={18} /> Light Mode</> : <><Moon size={18} /> Dark Mode</>}
+          </button>
+        </div>
+      </aside>
 
-          <div className="flex-row" style={{ alignItems: 'center', gap: '1rem' }}>
+      {/* Main Content Area */}
+      <main className="main-content">
+        {/* Top Configuration Bar */}
+        <header className="topbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <select 
-                value={runType} 
-                onChange={(e) => setRunType(e.target.value)}
-                disabled={isRunning}
-                style={{ padding: '0.5rem', fontWeight: 500 }}
-              >
-                <option value="init">Full Screener</option>
-                <option value="quarterly">Quarterly Review</option>
-                <option value="weekly">Weekly Risk Monitor</option>
+              <label style={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Provider</label>
+              <select value={llmProvider} onChange={handleProviderChange} disabled={isRunning} className="modern-select">
+                {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
               </select>
             </div>
-            
-            {runType === 'init' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <input 
-                  type="number" 
-                  min="1" max="10" 
-                  value={stocksPerCategory} 
-                  onChange={(e) => setStocksPerCategory(e.target.value)}
-                  disabled={isRunning}
-                  style={{ width: '80px', padding: '0.5rem', fontWeight: 500 }}
-                  title={`Stocks per category (Total Portfolio: ${stocksPerCategory * 5})`}
-                />
+          </div>
+        </header>
+
+        <div className="content-area">
+          {activeTab === 'live' && (
+            <>
+              {isRunning && (
+                <div className="data-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <Activity className="pulse" size={20} color="var(--accent-color)" />
+                    <h3 style={{ margin: 0 }}>Pipeline Running</h3>
+                  </div>
+                  <button className="btn btn-danger" onClick={stopPipeline}>
+                    Stop Process
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', width: '100%' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  
+                  {/* Stepper Header */}
+                  <div className="data-card" style={{ padding: '0 1.5rem' }}>
+                    <div className="stepper-container">
+                      <div 
+                        className={`step ${step === 'screener' || step === 'research' || step === 'executor' ? 'active' : ''}`}
+                        onClick={() => setStep('screener')}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className="step-circle">1</div>
+                        <div className="step-label">Screener</div>
+                      </div>
+                      <div className="step-line" style={{ background: step === 'research' || step === 'executor' ? 'var(--accent-color)' : 'var(--border-color)' }}></div>
+                      <div 
+                        className={`step ${step === 'research' || step === 'executor' ? 'active' : ''}`}
+                        onClick={() => setStep('research')}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <div className="step-circle">2</div>
+                        <div className="step-label">Research</div>
+                      </div>
+                      <div className="step-line" style={{ background: step === 'executor' ? 'var(--accent-color)' : 'var(--border-color)' }}></div>
+                      <div 
+                        className={`step ${step === 'executor' ? 'active' : ''}`}
+                        onClick={() => {
+                          if (pipelineState.reports && Object.keys(pipelineState.reports).length > 0) {
+                            setStep('executor');
+                          }
+                        }}
+                        style={{ 
+                          cursor: pipelineState.reports && Object.keys(pipelineState.reports).length > 0 ? 'pointer' : 'not-allowed', 
+                          opacity: pipelineState.reports && Object.keys(pipelineState.reports).length > 0 ? 1 : 0.5 
+                        }}
+                      >
+                        <div className="step-circle">3</div>
+                        <div className="step-label">Execution</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Wizard Steps */}
+                  {step === 'screener' && (
+                    <Screener 
+                      llmProvider={llmProvider}
+                      screenerModel={screenerModel}
+                      setScreenerModel={setScreenerModel}
+                      MODELS={MODELS}
+                      quickModel={quickModel}
+                      deepModel={deepModel}
+                      stocksPerCategory={stocksPerCategory}
+                      onProceedToResearch={(tickers) => {
+                        setScreenerTickers(tickers);
+                        setStep('research');
+                      }}
+                      pipelineState={pipelineState}
+                    />
+                  )}
+
+                  {step === 'research' && (
+                    <LiveResearch 
+                      llmProvider={llmProvider}
+                      quickModel={quickModel}
+                      setQuickModel={setQuickModel}
+                      deepModel={deepModel}
+                      setDeepModel={setDeepModel}
+                      MODELS={MODELS}
+                      pipelineState={pipelineState}
+                      screenerTickers={screenerTickers}
+                      onRunResearch={(tickers) => triggerPipeline('init', tickers)}
+                      onProceedToExecutor={() => setStep('executor')}
+                    />
+                  )}
+
+                  {step === 'executor' && (
+                    <Executor 
+                      llmProvider={llmProvider}
+                      executionModel={executionModel}
+                      setExecutionModel={setExecutionModel}
+                      MODELS={MODELS}
+                    />
+                  )}
+                </div>
+                
+                <Portfolio />
               </div>
-            )}
+            </>
+          )}
 
-            <button className="btn" onClick={() => triggerPipeline(runType)} disabled={isRunning}>
-              <Play size={18} /> {isRunning ? 'Running...' : 'Run / Continue'}
-            </button>
-            <button className="btn btn-danger" onClick={stopPipeline} disabled={!isRunning}>
-              Stop
-            </button>
-          </div>
+          {activeTab === 'maintenance' && (
+            <div className="flex-col" style={{ gap: '1.5rem', width: '100%', maxWidth: '800px' }}>
+              <div className="data-card">
+                <h2 style={{ fontSize: '1.25rem', margin: 0, marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Risk & Maintenance</h2>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+                  Run scheduled maintenance scans across your existing portfolio.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                  <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--accent-color)' }}>
+                      <Activity size={20} />
+                      <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Quarterly Review</h3>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Deep fundamental review of all existing holdings. Assesses earnings reports, management changes, and long-term moat trajectory.
+                    </p>
+                    <button className="btn" onClick={() => triggerPipeline('quarterly')} disabled={isRunning} style={{ marginTop: 'auto', background: 'var(--success)', color: '#ffffff', border: 'none' }}>
+                      {isRunning && runType === 'quarterly' ? 'Running...' : 'Run Quarterly Review'}
+                    </button>
+                  </div>
+
+                  <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--danger)' }}>
+                      <ShieldCheck size={20} />
+                      <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Weekly Risk Monitor</h3>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      Urgent risk scan focusing on recent news, short-term price action, and macroeconomic alerts.
+                    </p>
+                    <button className="btn" onClick={() => triggerPipeline('weekly')} disabled={isRunning} style={{ marginTop: 'auto', background: 'var(--danger)', color: '#ffffff', border: 'none' }}>
+                      {isRunning && runType === 'weekly' ? 'Running...' : 'Run Weekly Monitor'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            <HistoricalReports />
+          )}
         </div>
-
-        {/* Dynamic Helper Text for Run Action */}
-        <div style={{ padding: '0 0.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-          {runType === 'init' && "✨ Scans the entire market to build a fresh, high-conviction AI portfolio from scratch."}
-          {runType === 'quarterly' && "📊 Conducts a deep-dive fundamental review and restructuring of your existing holdings."}
-          {runType === 'weekly' && "🛡️ Quickly scans recent news and price action of your holdings to identify urgent risks."}
-        </div>
-
-        {/* LLM Configuration Row */}
-        <div style={{ 
-          display: 'flex', gap: '1.5rem', 
-          background: 'var(--bg-surface-hover)', 
-          border: '1px solid var(--border-color)',
-          padding: '1rem', borderRadius: '6px', flexWrap: 'wrap' 
-        }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Provider</label>
-            <select 
-              value={llmProvider} 
-              onChange={handleProviderChange} 
-              disabled={isRunning}
-              style={{ minWidth: '160px' }}
-            >
-              {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Quick Thinking Model</label>
-            <select 
-              value={quickModel} 
-              onChange={e => setQuickModel(e.target.value)}
-              disabled={isRunning}
-              style={{ minWidth: '220px' }}
-            >
-              {MODELS[llmProvider].quick.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Deep Thinking Model</label>
-            <select 
-              value={deepModel} 
-              onChange={e => setDeepModel(e.target.value)}
-              disabled={isRunning}
-              style={{ minWidth: '220px' }}
-            >
-              {MODELS[llmProvider].deep.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {activeTab === 'live' && (
-        <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
-          <LiveResearch pipelineState={pipelineState} />
-          <Portfolio />
-        </div>
-      )}
-
-      {activeTab === 'history' && (
-        <HistoricalReports />
-      )}
+      </main>
     </div>
   );
 }

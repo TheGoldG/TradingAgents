@@ -97,9 +97,16 @@ class TradingAgentsGraph:
             base_url=self.config.get("backend_url"),
             **llm_kwargs,
         )
+        execution_client = create_llm_client(
+            provider=self.config["llm_provider"],
+            model=self.config.get("execution_llm", self.config["deep_think_llm"]),
+            base_url=self.config.get("backend_url"),
+            **llm_kwargs,
+        )
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
+        self.execution_thinking_llm = execution_client.get_llm()
         
         self.memory_log = TradingMemoryLog(self.config)
 
@@ -114,6 +121,7 @@ class TradingAgentsGraph:
         self.graph_setup = GraphSetup(
             self.quick_thinking_llm,
             self.deep_thinking_llm,
+            self.execution_thinking_llm,
             self.tool_nodes,
             self.conditional_logic,
             analyst_concurrency_limit=self.config.get("analyst_concurrency_limit", 1),

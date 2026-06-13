@@ -40,40 +40,66 @@ class LivePipeline:
         logger.info(f"Research decision for {ticker}: {decision}")
         return decision.upper() == "BUY" or decision.upper() == "HOLD"
 
-    def init_portfolio(self, stocks_per_category: int = 3):
+    def init_portfolio(self, stocks_per_category: int = 3, tickers: List[str] = None):
         """
-        Builds the N-stock Day One portfolio.
+        Builds the N-stock Day One portfolio or researches a custom set of tickers.
         """
-        logger.info(f"Initializing {stocks_per_category*5}-stock portfolio...")
         import os, json
         from pathlib import Path
-        results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
-        results_dir.mkdir(parents=True, exist_ok=True)
-        allocations_file = results_dir / f"init_allocations_{self.today}.json"
+        
+        if tickers is not None:
+            logger.info(f"Using provided tickers for research: {tickers}")
+            all_tickers = tickers
+        else:
+            logger.info(f"Initializing {stocks_per_category*5}-stock portfolio...")
+            results_dir = Path(DEFAULT_CONFIG.get("results_dir"))
+            results_dir.mkdir(parents=True, exist_ok=True)
+            allocations_file = results_dir / f"init_allocations_{self.today}.json"
 
-        if allocations_file.exists():
-            with open(allocations_file, "r", encoding="utf-8") as f:
-                allocations = json.load(f)
-            
-            # Check if the cache matches the current multiplier request
-            cached_count = len(next(iter(allocations.values()))) if allocations else 0
-            if cached_count == stocks_per_category:
-                logger.info("Loading pre-existing allocations from disk...")
+            if allocations_file.exists():
+                with open(allocations_file, "r", encoding="utf-8") as f:
+                    allocations = json.load(f)
+                
+                # Check if the cache matches the current multiplier request
+                cached_count = len(next(iter(allocations.values()))) if allocations else 0
+                if cached_count == stocks_per_category:
+                    logger.info("Loading pre-existing allocations from disk...")
+                else:
+                    # 1. Screen universe for the top candidates
+                    logger.info(f"Running initial screener for {stocks_per_category} stocks per category...")
+                    screener_reasoning, final_candidates = self.screener.run_full_screen(stocks_per_category=stocks_per_category)
+                    logger.info(f"Screener complete. Selected {sum(len(v) for v in final_candidates.values())} candidates.")
+                    
+                    # Save screener report
+                    from tradingagents.db import init_db, save_report
+                    init_db()
+                    save_report("SCREENER_REPORT", self.today, {
+                        "reasoning": screener_reasoning,
+                        "selections": final_candidates
+                    })
+                    allocations = final_candidates
+                    with open(allocations_file, "w", encoding="utf-8") as f:
+                        json.dump(allocations, f, indent=4)
             else:
-                logger.info(f"Multiplier changed (cached: {cached_count}, requested: {stocks_per_category}). Re-running screener...")
-                allocations = self.screener.run_full_screen(stocks_per_category)
+                logger.info(f"Running initial screener for {stocks_per_category} stocks per category...")
+                screener_reasoning, allocations = self.screener.run_full_screen(stocks_per_category=stocks_per_category)
+                logger.info(f"Screener complete. Selected {sum(len(v) for v in allocations.values())} candidates.")
+                
+                # Save screener report
+                from tradingagents.db import init_db, save_report
+                init_db()
+                save_report("SCREENER_REPORT", self.today, {
+                    "reasoning": screener_reasoning,
+                    "selections": allocations
+                })
                 with open(allocations_file, "w", encoding="utf-8") as f:
                     json.dump(allocations, f, indent=4)
-        else:
-            allocations = self.screener.run_full_screen(stocks_per_category)
-            with open(allocations_file, "w", encoding="utf-8") as f:
-                json.dump(allocations, f, indent=4)
-        
-        # Flatten the allocations
-        all_tickers = []
-        for slot, tickers in allocations.items():
-            logger.info(f"Slot: {slot} -> {tickers}")
-            all_tickers.extend(tickers)
+            
+            # Flatten the allocations
+            all_tickers = []
+            for slot, tickers_list in allocations.items():
+                logger.info(f"Slot: {slot} -> {tickers_list}")
+                all_tickers.extend(tickers_list)
             
         # Full 360 Research analysts
         full_analysts = ["market", "social", "news", "fundamentals"]
@@ -84,9 +110,9 @@ class LivePipeline:
             if self.stop_requested:
                 logger.info("Stop requested. Halting init_portfolio.")
                 break
-
+ 
             # Check if this ticker was already researched today in the DB
-            from tradingagents.db import init_db, report_exists, get_report
+            from tradingagents.db import init_db, report_exists, get_report, save_recommendation
             init_db()
             
             is_approved = False
@@ -106,17 +132,15 @@ class LivePipeline:
                     is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)
             else:
                 is_approved = self._run_research(ticker, full_analysts, current_index=i, total_count=total_count)
-
+ 
             if is_approved:
                 approved_tickers.append(ticker)
+                # Save as pending recommendation instead of executing buy
+                save_recommendation(ticker, self.today, "BUY", "pending")
             else:
                 logger.warning(f"{ticker} failed research. A replacement will be needed in future runs.")
                 
-        # Execute Buys
-        for ticker in approved_tickers:
-            self.executor.execute_buy(ticker, total_slots=15)
-            
-        logger.info("Initial portfolio construction complete.")
+        logger.info(f"Initial portfolio research complete. Saved {len(approved_tickers)} recommended buys to database.")
 
     def quarterly_review(self):
         """

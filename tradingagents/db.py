@@ -23,6 +23,14 @@ def init_db():
             PRIMARY KEY (ticker, date)
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS recommendations (
+            ticker TEXT PRIMARY KEY,
+            date TEXT,
+            decision TEXT,
+            status TEXT DEFAULT 'pending'
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -80,3 +88,43 @@ def report_exists(ticker: str, date: str) -> bool:
     row = cursor.fetchone()
     conn.close()
     return bool(row)
+
+def save_recommendation(ticker: str, date: str, decision: str, status: str = 'pending'):
+    conn = sqlite3.connect(get_db_path())
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO recommendations (ticker, date, decision, status)
+        VALUES (?, ?, ?, ?)
+    ''', (ticker.upper(), date, decision, status))
+    conn.commit()
+    conn.close()
+    logger.info(f"Saved recommendation for {ticker}: {decision} ({status})")
+
+def get_pending_recommendations() -> list:
+    conn = sqlite3.connect(get_db_path())
+    cursor = conn.cursor()
+    # Check if table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='recommendations'")
+    if not cursor.fetchone():
+        conn.close()
+        return []
+    cursor.execute("SELECT ticker, date, decision, status FROM recommendations WHERE status = 'pending'")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"ticker": r[0], "date": r[1], "decision": r[2], "status": r[3]} for r in rows]
+
+def update_recommendation_status(ticker: str, status: str):
+    conn = sqlite3.connect(get_db_path())
+    cursor = conn.cursor()
+    cursor.execute("UPDATE recommendations SET status = ? WHERE ticker = ?", (status, ticker.upper()))
+    conn.commit()
+    conn.close()
+    logger.info(f"Updated recommendation status for {ticker} to {status}")
+
+def clear_recommendations():
+    conn = sqlite3.connect(get_db_path())
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM recommendations")
+    conn.commit()
+    conn.close()
+    logger.info("Cleared all recommendations")

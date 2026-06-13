@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Briefcase, TrendingUp } from 'lucide-react';
+import { Briefcase, TrendingUp, ExternalLink } from 'lucide-react';
 
 export default function Portfolio() {
   const [holdings, setHoldings] = useState([]);
@@ -25,10 +25,21 @@ export default function Portfolio() {
   }, []);
 
   return (
-    <div className="glass-panel" style={{ width: '350px' }}>
-      <div className="flex-row mb-4">
-        <Briefcase className="text-accent-color" />
-        <h2>Current Portfolio</h2>
+    <div className="data-card" style={{ width: '350px' }}>
+      <div className="flex-row mb-4 space-between" style={{ width: '100%', alignItems: 'center' }}>
+        <div className="flex-row" style={{ gap: '0.5rem' }}>
+          <Briefcase className="text-accent-color" />
+          <h2 style={{ margin: 0 }}>Portfolio</h2>
+        </div>
+        <a 
+          href="https://app.alpaca.markets/dashboard" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="btn btn-secondary"
+          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', gap: '0.25rem', height: 'fit-content' }}
+        >
+          Alpaca <ExternalLink size={12} />
+        </a>
       </div>
 
       {loading ? (
@@ -40,8 +51,30 @@ export default function Portfolio() {
           ) : (
             holdings.map((ticker, idx) => (
               <div key={idx} className="flex-row space-between" style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px' }}>
-                <span style={{ fontWeight: 600 }}>{ticker}</span>
-                <div className="badge completed flex-row" style={{ gap: '0.25rem' }}>
+                <a
+                  href={`https://finance.yahoo.com/quote/${ticker}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-row"
+                  style={{ 
+                    fontWeight: 600, 
+                    color: 'var(--text-primary)', 
+                    textDecoration: 'none',
+                    transition: 'color 0.15s ease',
+                    cursor: 'pointer',
+                    gap: '0.25rem'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = 'var(--success)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                >
+                  {ticker}
+                  <ExternalLink size={12} style={{ opacity: 0.5 }} />
+                </a>
+                <div className="badge success flex-row" style={{ gap: '0.25rem' }}>
                   <TrendingUp size={12} /> ACTIVE
                 </div>
               </div>

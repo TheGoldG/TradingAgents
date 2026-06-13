@@ -37,9 +37,12 @@ from pydantic import BaseModel
 class PipelineRequest(BaseModel):
     llm_provider: str = "google"
     paper: bool = True
+    screener_model: Optional[str] = None
     quick_model: Optional[str] = None
     deep_model: Optional[str] = None
+    execution_model: Optional[str] = None
     stocks_per_category: int = 3
+    custom_tickers: Optional[str] = None
 
 # Global state for frontend polling
 live_state = {
@@ -52,8 +55,10 @@ live_state = {
     "agent_status": {}, # e.g. {"market": "in_progress", "social": "pending"}
     "reports": {},
     "llm_provider": None,
+    "screener_model": None,
     "quick_model": None,
     "deep_model": None,
+    "execution_model": None,
     "error": None,
 }
 
@@ -95,6 +100,8 @@ def api_research_callback(ticker: str, analysts: List[str], checkpoint: bool, cu
         config["quick_think_llm"] = live_state["quick_model"]
     if live_state.get("deep_model"):
         config["deep_think_llm"] = live_state["deep_model"]
+    if live_state.get("execution_model"):
+        config["execution_llm"] = live_state["execution_model"]
 
     graph = TradingAgentsGraph(selected_analysts=analysts, config=config)
     instrument_context = graph.resolve_instrument_context(ticker, "stock")
@@ -196,7 +203,10 @@ def run_pipeline_task(operation: str, req: PipelineRequest):
     
     try:
         if operation == "init":
-            pipeline.init_portfolio(stocks_per_category=req.stocks_per_category)
+            tickers = None
+            if req.custom_tickers:
+                tickers = [t.strip().upper() for t in req.custom_tickers.split(",") if t.strip()]
+            pipeline.init_portfolio(stocks_per_category=req.stocks_per_category, tickers=tickers)
         elif operation == "quarterly":
             pipeline.quarterly_review()
         elif operation == "weekly":
@@ -214,6 +224,71 @@ def run_pipeline_task(operation: str, req: PipelineRequest):
 @app.get("/api/pipeline/status")
 async def get_pipeline_status():
     return live_state
+
+def run_screener_task(req: PipelineRequest):
+    live_state["is_running"] = True
+    live_state["error"] = None
+    live_state["operation"] = "screener"
+    live_state["ticker"] = "Screening Universe..."
+    live_state["progress"] = "in_progress"
+    
+    emit_event("pipeline_status", {"ticker": "Screening Market...", "current": 0, "total": 0, "operation": "screener"})
+    
+    try:
+        from tradingagents.pipeline.screener_agent import ScreenerAgent
+        from tradingagents.db import init_db, save_report
+        from datetime import datetime
+        from tradingagents.default_config import DEFAULT_CONFIG
+        
+        screener = ScreenerAgent(config={
+            "llm_provider": req.llm_provider,
+            "screener_llm": req.screener_model or req.quick_model,
+            "backend_url": DEFAULT_CONFIG.get("backend_url")
+        })
+        
+        if req.custom_tickers:
+            screener.universe = [t.strip().upper() for t in req.custom_tickers.split(",") if t.strip()]
+            
+        stocks_per_cat = int(req.stocks_per_category)
+        reasoning, allocations = screener.run_full_screen(stocks_per_category=stocks_per_cat)
+        
+        # Save the manual screener run to DB
+        init_db()
+        today = datetime.now().strftime("%Y-%m-%d")
+        report_payload = {
+            "reasoning": reasoning,
+            "selections": allocations
+        }
+        save_report("SCREENER_REPORT", today, report_payload)
+        
+        emit_event("screener_complete", report_payload)
+    except Exception as e:
+        logger.error(f"Screener failed: {e}")
+        live_state["error"] = str(e)
+        emit_event("pipeline_error", {"operation": "screener", "error": str(e)})
+    finally:
+        live_state["is_running"] = False
+        live_state["operation"] = None
+
+@app.post("/api/screener/run")
+async def run_screener(req: PipelineRequest, background_tasks: BackgroundTasks):
+    """Run the Screener asynchronously to generate a report."""
+    if live_state["is_running"]:
+        raise HTTPException(status_code=400, detail="Pipeline is already running")
+    background_tasks.add_task(asyncio.to_thread, run_screener_task, req)
+    return {"status": "started", "operation": "screener"}
+
+@app.get("/api/screener/latest")
+async def get_latest_screener():
+    from tradingagents.db import init_db, list_reports, get_report
+    init_db()
+    reports = list_reports()
+    dates = reports.get("SCREENER_REPORT", [])
+    if not dates:
+        return {"error": "No screener report found"}
+    latest_date = dates[0]
+    data = get_report("SCREENER_REPORT", latest_date)
+    return {"date": latest_date, "report": data}
 
 @app.post("/api/pipeline/{operation}")
 async def start_pipeline(operation: str, req: PipelineRequest, background_tasks: BackgroundTasks):
@@ -252,6 +327,84 @@ async def get_report(ticker: str, date: str):
     if report_data:
         return report_data
     return {"error": "Report not found"}
+
+@app.get("/api/recommendations")
+async def get_recommendations_api():
+    from tradingagents.db import init_db, get_pending_recommendations
+    init_db()
+    recs = get_pending_recommendations()
+    return {"recommendations": recs}
+
+class BuyRequest(BaseModel):
+    ticker: str
+    paper: bool = True
+
+@app.post("/api/executor/buy")
+async def execute_buy_api(req: BuyRequest):
+    from tradingagents.pipeline.executor_agent import AlpacaExecutorAgent
+    from tradingagents.db import init_db, update_recommendation_status
+    try:
+        executor = AlpacaExecutorAgent(paper=req.paper)
+        executor.execute_buy(req.ticker.upper(), total_slots=15)
+        init_db()
+        update_recommendation_status(req.ticker.upper(), "executed")
+        return {"status": "success", "message": f"Successfully executed buy for {req.ticker}"}
+    except Exception as e:
+        logger.error(f"Buy execution failed for {req.ticker}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class BuyAllRequest(BaseModel):
+    paper: bool = True
+
+@app.post("/api/executor/buy_all")
+async def execute_buy_all_api(req: BuyAllRequest):
+    from tradingagents.db import init_db, get_pending_recommendations, update_recommendation_status
+    from tradingagents.pipeline.executor_agent import AlpacaExecutorAgent
+    init_db()
+    recs = get_pending_recommendations()
+    if not recs:
+        return {"status": "success", "message": "No pending recommendations to buy"}
+    
+    executor = AlpacaExecutorAgent(paper=req.paper)
+    success_tickers = []
+    failed_tickers = []
+    
+    for r in recs:
+        ticker = r["ticker"]
+        try:
+            executor.execute_buy(ticker, total_slots=15)
+            update_recommendation_status(ticker, "executed")
+            success_tickers.append(ticker)
+        except Exception as e:
+            logger.error(f"Buy all execution failed for {ticker}: {e}")
+            failed_tickers.append(ticker)
+            
+    return {
+        "status": "success" if not failed_tickers else "partial_failure",
+        "executed": success_tickers,
+        "failed": failed_tickers
+    }
+
+@app.post("/api/recommendations/clear")
+async def clear_recommendations_api():
+    from tradingagents.db import init_db, clear_recommendations
+    init_db()
+    clear_recommendations()
+    return {"status": "success", "message": "Cleared all pending recommendations"}
+
+@app.get("/api/ticker/verify")
+async def verify_ticker_api(ticker: str):
+    import yfinance as yf
+    try:
+        t = yf.Ticker(ticker.upper())
+        # Checking fast_info is much quicker than full info()
+        price = t.fast_info.get("lastPrice") or t.fast_info.get("previousClose")
+        if not price:
+            raise Exception("No price data found")
+        return {"status": "success", "ticker": ticker.upper(), "valid": True}
+    except Exception as e:
+        logger.error(f"Ticker verification failed for {ticker}: {e}")
+        raise HTTPException(status_code=400, detail="Invalid ticker")
 
 @app.get("/api/stream")
 async def stream_events(request: Request):
