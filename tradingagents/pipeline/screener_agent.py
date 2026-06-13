@@ -133,10 +133,10 @@ class ScreenerAgent:
         logger.info(f"Quantitative scan complete. {len(passed_stocks)} stocks passed.")
         return passed_stocks
 
-    def _llm_moat_filter(self, candidates: List[Dict[str, Any]], slot: Optional[str] = None, stocks_per_category: int = 3) -> tuple[str, Dict[str, List[str]]]:
+    def _llm_moat_filter(self, candidates: List[Dict[str, Any]], slot: Optional[str] = None, stocks_per_category: int = 3, scan_entire_market: bool = True) -> tuple[str, Dict[str, List[str]]]:
         """
         Uses an LLM to evaluate the Moat (High Switching Costs, Network Effects, Pricing Power)
-        and categorizes them into the 5 pillars. If slot is provided, it only searches for that slot.
+        and categorizes them.
         Returns a tuple of (reasoning_markdown, allocations_dict).
         """
         prompt = (
@@ -145,19 +145,31 @@ class ScreenerAgent:
             "1. High Switching Costs\n"
             "2. Network Effects\n"
             "3. Pricing Power\n\n"
-            f"I need you to select exactly {stocks_per_category} stocks for EACH of the following 5 categories "
-            f"(if a specific slot is requested, only pick {stocks_per_category} for that slot). "
-            "You must ONLY pick from the provided list of candidates.\n\n"
-            "Categories:\n"
-            "Slot 1: Secular Compounder (Big Tech/AI)\n"
-            "Slot 2: Defensive Cash Cow (Consumer/Health)\n"
-            "Slot 3: Financial/Infrastructure Lifeline\n"
-            "Slot 4: Cyclical/Industrial Value Engine\n"
-            "Slot 5: Asymmetric Moonshot (High Beta)\n\n"
-            f"Return the output STRICTLY as a JSON object with two keys:\n"
-            f"1. \"reasoning\": A detailed Markdown report explaining your thought process for every stock chosen, why it fits the slot, and its moat.\n"
-            f"2. \"selections\": An object where keys are the Slot names and values are lists of {stocks_per_category} ticker strings.\n\n"
         )
+        
+        if scan_entire_market:
+            prompt += (
+                f"I need you to select exactly {stocks_per_category} stocks for EACH of the following 5 categories "
+                f"(if a specific slot is requested, only pick {stocks_per_category} for that slot). "
+                "You must ONLY pick from the provided list of candidates.\n\n"
+                "Categories:\n"
+                "Slot 1: Secular Compounder (Big Tech/AI)\n"
+                "Slot 2: Defensive Cash Cow (Consumer/Health)\n"
+                "Slot 3: Financial/Infrastructure Lifeline\n"
+                "Slot 4: Cyclical/Industrial Value Engine\n"
+                "Slot 5: Asymmetric Moonshot (High Beta)\n\n"
+                f"Return the output STRICTLY as a JSON object with two keys:\n"
+                f"1. \"reasoning\": A detailed Markdown report explaining your thought process for every stock chosen, why it fits the slot, and its moat.\n"
+                f"2. \"selections\": An object where keys are the Slot names and values are lists of {stocks_per_category} ticker strings.\n\n"
+            )
+        else:
+            prompt += (
+                "For EACH company in the list, evaluate if it possesses a strong economic moat.\n"
+                "Do NOT force them into specific slots or enforce limits. Evaluate ONLY the provided candidates.\n\n"
+                f"Return the output STRICTLY as a JSON object with two keys:\n"
+                f"1. \"reasoning\": A detailed Markdown report explaining your thought process for every stock evaluated, analyzing their moat.\n"
+                f"2. \"selections\": An object with exactly two keys: \"Recommended by Moat\" and \"Not Recommended by Moat\", containing lists of ticker strings based on your evaluation.\n\n"
+            )
         
         candidates_text = "\n".join([f"- {c['ticker']} ({c['name']}): Sector={c['sector']}, ROE={c['roe']:.2f}, PEG={c['peg']}" for c in candidates])
         
@@ -184,17 +196,24 @@ class ScreenerAgent:
             logger.error(f"Failed to parse LLM output: {response}")
             return "Error parsing reasoning.", {}
 
-    def run_full_screen(self, stocks_per_category: int = 3) -> tuple[str, Dict[str, List[str]]]:
+    def run_full_screen(self, stocks_per_category: int = 3, scan_entire_market: bool = True) -> tuple[str, Dict[str, List[str]]]:
         """
         Executes the entire screening pipeline: 
         1. Quantitative Scan (ROE, D/E, FCF)
         2. Qualitative Moat Filter via LLM
         Returns (reasoning, dictionary mapping slots to list of tickers).
         """
-        quant_passed = self.run_quantitative_scan()
-        if len(quant_passed) < stocks_per_category * 5:
-            logger.warning("Too few candidates passed quant screen. Falling back to broader universe.")
-            quant_passed = [{"ticker": t, "name": t, "sector": "", "roe": 0, "peg": 0} for t in self.universe]
+        if scan_entire_market:
+            quant_passed = self.run_quantitative_scan()
+            if len(quant_passed) < stocks_per_category * 5:
+                logger.warning("Too few candidates passed quant screen. Falling back to broader universe.")
+                quant_passed = [{"ticker": t, "name": t, "sector": "", "roe": 0, "peg": 0} for t in self.universe]
+        else:
+            # If not scanning entire market, evaluate exactly the user's custom universe
+            quant_passed = []
+            for t in self.universe:
+                res = self._evaluate_single_stock(t)
+                quant_passed.append(res if res else {"ticker": t, "name": t, "sector": "", "roe": 0, "peg": 0})
             
-        reasoning, final_allocations = self._llm_moat_filter(quant_passed, stocks_per_category=stocks_per_category)
+        reasoning, final_allocations = self._llm_moat_filter(quant_passed, stocks_per_category=stocks_per_category, scan_entire_market=scan_entire_market)
         return reasoning, final_allocations

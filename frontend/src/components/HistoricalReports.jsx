@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 
 function ReportCard({ title, content }) {
   if (!content) return null;
@@ -22,6 +22,7 @@ function HistoricalReports() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [reportData, setReportData] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState({});
+  const [reportMode, setReportMode] = useState('advanced');
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -142,9 +143,42 @@ function HistoricalReports() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div className="data-card">
-              <h2 style={{ margin: 0, color: 'var(--text-primary)' }}>{selectedTicker}</h2>
-              <p style={{ margin: 0, color: 'var(--text-secondary)' }}>Report Date: {selectedDate}</p>
+            <div className="data-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ margin: 0, color: 'var(--text-primary)' }}>
+                  {selectedDate !== 'SCREENER_REPORT' ? (
+                    <a 
+                      href={`https://finance.yahoo.com/quote/${selectedTicker}`} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      style={{ color: 'var(--accent-color)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                      title="View on Yahoo Finance"
+                    >
+                      {selectedTicker} <ExternalLink size={18} />
+                    </a>
+                  ) : selectedTicker}
+                </h2>
+                <p style={{ margin: 0, color: 'var(--text-secondary)' }}>Report Date: {selectedDate === 'SCREENER_REPORT' ? 'Screener Scan' : selectedDate}</p>
+              </div>
+
+              {selectedDate !== 'SCREENER_REPORT' && (
+                <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                  <button 
+                    className="btn" 
+                    onClick={() => setReportMode('simple')}
+                    style={{ background: reportMode === 'simple' ? 'var(--accent-color)' : 'transparent', color: reportMode === 'simple' ? 'var(--accent-text)' : 'var(--text-secondary)', border: 'none', borderRadius: 0, padding: '0.5rem 1rem' }}
+                  >
+                    Simple
+                  </button>
+                  <button 
+                    className="btn" 
+                    onClick={() => setReportMode('advanced')}
+                    style={{ background: reportMode === 'advanced' ? 'var(--accent-color)' : 'transparent', color: reportMode === 'advanced' ? 'var(--accent-text)' : 'var(--text-secondary)', border: 'none', borderRadius: 0, padding: '0.5rem 1rem' }}
+                  >
+                    Advanced
+                  </button>
+                </div>
+              )}
             </div>
 
             {reportData.reasoning && (
@@ -177,28 +211,32 @@ function HistoricalReports() {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
-              <ReportCard title="Market Analysis" content={reportData.market_report} />
-              <ReportCard title="Social Sentiment" content={reportData.sentiment_report} />
-              <ReportCard title="News Analysis" content={reportData.news_report} />
-              <ReportCard title="Fundamentals Analysis" content={reportData.fundamentals_report} />
-            </div>
-            
-            {reportData.investment_debate_state && (
-               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                  <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--success)' }}>
-                     <h4 style={{ color: 'var(--success)', marginBottom: '0.75rem' }}>Bull Thesis</h4>
-                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                       <ReactMarkdown>{reportData.investment_debate_state.bull_history}</ReactMarkdown>
-                     </div>
-                  </div>
-                  <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--danger)' }}>
-                     <h4 style={{ color: 'var(--danger)', marginBottom: '0.75rem' }}>Bear Thesis</h4>
-                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                       <ReactMarkdown>{reportData.investment_debate_state.bear_history}</ReactMarkdown>
-                     </div>
-                  </div>
-               </div>
+            {reportMode === 'advanced' && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+                  <ReportCard title="Market Analysis" content={reportData.market_report} />
+                  <ReportCard title="Social Sentiment" content={reportData.sentiment_report} />
+                  <ReportCard title="News Analysis" content={reportData.news_report} />
+                  <ReportCard title="Fundamentals Analysis" content={reportData.fundamentals_report} />
+                </div>
+                
+                {reportData.investment_debate_state && (
+                   <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                      <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--success)' }}>
+                         <h4 style={{ color: 'var(--success)', marginBottom: '0.75rem' }}>Bull Thesis</h4>
+                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                           <ReactMarkdown>{reportData.investment_debate_state.bull_history}</ReactMarkdown>
+                         </div>
+                      </div>
+                      <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--danger)' }}>
+                         <h4 style={{ color: 'var(--danger)', marginBottom: '0.75rem' }}>Bear Thesis</h4>
+                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                           <ReactMarkdown>{reportData.investment_debate_state.bear_history}</ReactMarkdown>
+                         </div>
+                      </div>
+                   </div>
+                )}
+              </>
             )}
 
             {reportData.investment_debate_state && reportData.investment_debate_state.judge_decision && (

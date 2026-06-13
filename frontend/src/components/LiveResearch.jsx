@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Activity, CheckCircle, Clock, ShieldAlert, ArrowRight } from 'lucide-react';
+import { Activity, CheckCircle, Clock, ShieldAlert, ArrowRight, ExternalLink } from 'lucide-react';
 import TagInput from './TagInput';
 
 function StatusIcon({ status }) {
@@ -40,6 +40,7 @@ function LiveResearch({
   const [agentStatus, setAgentStatus] = useState(pipelineState.agent_status || {});
   const [reports, setReports] = useState(pipelineState.reports || {});
   const [progress, setProgress] = useState(pipelineState.progress || '');
+  const [reportMode, setReportMode] = useState('advanced');
 
   useEffect(() => {
     // Sync with pipelineState if it comes from the parent fetchStatus polling
@@ -209,10 +210,20 @@ function LiveResearch({
         <>
 
       {/* Status Header */}
-      <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <h2 style={{ margin: 0, color: 'var(--text-primary)' }}>
-            {currentTicker || 'Loading...'} {progress}
+            {currentTicker ? (
+              <a 
+                href={`https://finance.yahoo.com/quote/${currentTicker}`} 
+                target="_blank" 
+                rel="noreferrer"
+                style={{ color: 'var(--accent-color)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                title="View on Yahoo Finance"
+              >
+                {currentTicker} <ExternalLink size={18} />
+              </a>
+            ) : 'Loading...'} {progress}
           </h2>
           {pipelineState.is_running && (
             <span style={{ color: 'var(--accent)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -220,6 +231,25 @@ function LiveResearch({
             </span>
           )}
         </div>
+        
+        {Object.keys(reports).length > 0 && (
+          <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+            <button 
+              className="btn" 
+              onClick={() => setReportMode('simple')}
+              style={{ background: reportMode === 'simple' ? 'var(--accent-color)' : 'transparent', color: reportMode === 'simple' ? 'var(--accent-text)' : 'var(--text-secondary)', border: 'none', borderRadius: 0, padding: '0.5rem 1rem' }}
+            >
+              Simple
+            </button>
+            <button 
+              className="btn" 
+              onClick={() => setReportMode('advanced')}
+              style={{ background: reportMode === 'advanced' ? 'var(--accent-color)' : 'transparent', color: reportMode === 'advanced' ? 'var(--accent-text)' : 'var(--text-secondary)', border: 'none', borderRadius: 0, padding: '0.5rem 1rem' }}
+            >
+              Advanced
+            </button>
+          </div>
+        )}
       </div>
 
       {pipelineState.error && (
@@ -246,28 +276,32 @@ function LiveResearch({
       </div>
 
       {/* Reports Stack */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
-        <ReportCard title="Market Analysis" content={reports.market_report} />
-        <ReportCard title="Social Sentiment" content={reports.sentiment_report} />
-        <ReportCard title="News Analysis" content={reports.news_report} />
-        <ReportCard title="Fundamentals Analysis" content={reports.fundamentals_report} />
-      </div>
-      
-      {reports.debate && (
-         <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-            <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--success)' }}>
-               <h4 style={{ color: 'var(--success)', marginBottom: '0.75rem' }}>Bull Thesis</h4>
-               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                 <ReactMarkdown>{reports.debate.bull}</ReactMarkdown>
-               </div>
-            </div>
-            <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--danger)' }}>
-               <h4 style={{ color: 'var(--danger)', marginBottom: '0.75rem' }}>Bear Thesis</h4>
-               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-                 <ReactMarkdown>{reports.debate.bear}</ReactMarkdown>
-               </div>
-            </div>
-         </div>
+      {reportMode === 'advanced' && (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+            <ReportCard title="Market Analysis" content={reports.market_report} />
+            <ReportCard title="Social Sentiment" content={reports.sentiment_report} />
+            <ReportCard title="News Analysis" content={reports.news_report} />
+            <ReportCard title="Fundamentals Analysis" content={reports.fundamentals_report} />
+          </div>
+          
+          {reports.debate && (
+             <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--success)' }}>
+                   <h4 style={{ color: 'var(--success)', marginBottom: '0.75rem' }}>Bull Thesis</h4>
+                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                     <ReactMarkdown>{reports.debate.bull}</ReactMarkdown>
+                   </div>
+                </div>
+                <div className="data-card" style={{ flex: '1 1 400px', borderLeft: '4px solid var(--danger)' }}>
+                   <h4 style={{ color: 'var(--danger)', marginBottom: '0.75rem' }}>Bear Thesis</h4>
+                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                     <ReactMarkdown>{reports.debate.bear}</ReactMarkdown>
+                   </div>
+                </div>
+             </div>
+          )}
+        </>
       )}
 
       {reports.debate && reports.debate.judge && (

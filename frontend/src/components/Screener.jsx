@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Cpu, ShieldCheck, Activity, TrendingUp, Zap, HelpCircle, ArrowRight, RefreshCw } from 'lucide-react';
+import { Cpu, ShieldCheck, Activity, TrendingUp, Zap, HelpCircle, ArrowRight, RefreshCw, Check, Plus, ExternalLink } from 'lucide-react';
 import TagInput from './TagInput';
 
 export default function Screener({ 
@@ -18,6 +18,39 @@ export default function Screener({
   const [loadingLatest, setLoadingLatest] = useState(true);
   const [customTickers, setCustomTickers] = useState([]);
   const [stocksPerCat, setStocksPerCat] = useState(stocksPerCategory);
+  const [checkedTickers, setCheckedTickers] = useState([]);
+  const [initializedReportDate, setInitializedReportDate] = useState(null);
+  const [scanEntireMarket, setScanEntireMarket] = useState(true);
+  const [userAddedTickers, setUserAddedTickers] = useState([]);
+
+  // Auto-check newly added manual tickers
+  useEffect(() => {
+    if (userAddedTickers.length > 0) {
+      setCheckedTickers(prev => {
+        const toAdd = userAddedTickers.filter(t => !prev.includes(t));
+        if (toAdd.length > 0) return [...prev, ...toAdd];
+        return prev;
+      });
+    }
+  }, [userAddedTickers]);
+
+  // Initialize checkedTickers when screenerReport changes (only once per report)
+  useEffect(() => {
+    if (screenerReport?.report?.selections && screenerReport.date !== initializedReportDate) {
+      const flat = [];
+      Object.values(screenerReport.report.selections).forEach(tickers => {
+        if (Array.isArray(tickers)) flat.push(...tickers);
+      });
+      setCheckedTickers([...new Set(flat)]);
+      setInitializedReportDate(screenerReport.date);
+    }
+  }, [screenerReport, initializedReportDate]);
+
+  const toggleTicker = (ticker) => {
+    setCheckedTickers(prev => 
+      prev.includes(ticker) ? prev.filter(t => t !== ticker) : [...prev, ticker]
+    );
+  };
 
   const fetchLatestReport = async () => {
     try {
@@ -46,6 +79,7 @@ export default function Screener({
 
   const handleRunScreener = async () => {
     setScreenerReport(null);
+    setUserAddedTickers([]);
     try {
       await fetch('http://localhost:8000/api/screener/run', {
         method: 'POST',
@@ -56,7 +90,8 @@ export default function Screener({
           quick_model: quickModel,
           deep_model: deepModel,
           stocks_per_category: parseInt(stocksPerCat),
-          custom_tickers: customTickers.length > 0 ? customTickers.join(',') : null
+          custom_tickers: customTickers.length > 0 ? customTickers.join(',') : null,
+          scan_entire_market: scanEntireMarket
         })
       });
     } catch (e) {
@@ -82,6 +117,8 @@ export default function Screener({
 
   const getCategoryIcon = (category) => {
     const cat = category.toLowerCase();
+    if (cat.includes('recommended by moat') && !cat.includes('not')) return <ShieldCheck size={16} style={{ color: 'var(--success)' }} />;
+    if (cat.includes('not recommended')) return <ShieldAlert size={16} style={{ color: 'var(--danger)' }} />;
     if (cat.includes('secular') || cat.includes('tech') || cat.includes('ai')) return <Cpu size={16} className="text-accent-color" />;
     if (cat.includes('defensive') || cat.includes('cash') || cat.includes('health')) return <ShieldCheck size={16} style={{ color: 'var(--success)' }} />;
     if (cat.includes('financial') || cat.includes('infrastructure') || cat.includes('lifeline')) return <Zap size={16} style={{ color: 'var(--warning)' }} />;
@@ -117,9 +154,42 @@ export default function Screener({
         </div>
 
         <div className="flex-row" style={{ flexWrap: 'wrap', gap: '1.5rem', alignItems: 'flex-end', marginTop: '1.5rem' }}>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: '0 0 auto' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+              Scan Entire Market
+            </label>
+            <div 
+              onClick={() => {
+                if (!isScreenerRunning) setScanEntireMarket(!scanEntireMarket);
+              }}
+              style={{ 
+                width: '48px', height: '24px', 
+                background: scanEntireMarket ? 'var(--accent-color)' : 'var(--bg-surface-hover)', 
+                borderRadius: '12px', 
+                position: 'relative', 
+                cursor: isScreenerRunning ? 'not-allowed' : 'pointer',
+                transition: 'background 0.3s',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 2px',
+                border: '1px solid var(--border-color)'
+              }}
+            >
+              <div style={{ 
+                width: '20px', height: '20px', 
+                background: '#fff', 
+                borderRadius: '50%', 
+                transform: scanEntireMarket ? 'translateX(22px)' : 'translateX(0)',
+                transition: 'transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)',
+                boxShadow: 'var(--shadow-sm)'
+              }} />
+            </div>
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1, minWidth: '250px' }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-              Custom Tickers (Optional - Press Enter)
+              {scanEntireMarket ? 'Custom Tickers (Optional - Press Enter)' : 'Custom Tickers (Required - Press Enter)'}
             </label>
             <TagInput 
               tags={customTickers} 
@@ -129,25 +199,26 @@ export default function Screener({
             />
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', opacity: customTickers.length > 0 ? 0.4 : 1, transition: 'opacity 0.2s' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
-              Stocks Per Category
-            </label>
-            <input 
-              type="number" 
-              min="1" max="10"
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <label style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Stocks Per Category</label>
+            <select 
               value={stocksPerCat} 
-              onChange={(e) => setStocksPerCat(e.target.value)}
-              disabled={isScreenerRunning || customTickers.length > 0}
-              style={{ width: '100px' }}
-            />
+              onChange={e => setStocksPerCat(e.target.value)} 
+              disabled={isScreenerRunning || !scanEntireMarket} 
+              className="modern-select"
+            >
+              <option value="1">1 Stock</option>
+              <option value="3">3 Stocks</option>
+              <option value="5">5 Stocks</option>
+              <option value="10">10 Stocks</option>
+            </select>
           </div>
 
           <button 
-            className="btn" 
             onClick={handleRunScreener} 
-            disabled={isScreenerRunning}
-            style={{ height: 'fit-content', background: 'var(--accent-color)', color: 'var(--accent-text)', border: 'none' }}
+            disabled={isScreenerRunning || (!scanEntireMarket && customTickers.length === 0)} 
+            className="btn btn-primary"
+            style={{ padding: '0.6rem 1.5rem', fontWeight: 600, height: '38px', minWidth: '140px' }}
           >
             {isScreenerRunning ? (
               <>
@@ -179,35 +250,142 @@ export default function Screener({
               Moat Filter Selections ({screenerReport.date})
             </h3>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
               {Object.entries(screenerReport.report.selections || {}).map(([category, tickers]) => (
                 <div key={category} className="data-card">
-                  <div className="flex-row" style={{ gap: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-                    <div style={{ color: 'var(--accent-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+                    <div style={{ color: 'var(--accent-color)', display: 'inline-flex', marginTop: '0.15rem' }}>
                       {getCategoryIcon(category)}
                     </div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <div style={{ 
+                      fontSize: '0.8rem', 
+                      fontWeight: 600, 
+                      color: 'var(--text-primary)', 
+                      textTransform: 'uppercase', 
+                      letterSpacing: '0.05em',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'break-word',
+                      lineHeight: '1.4'
+                    }}>
                       {category}
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {tickers.map(ticker => (
-                      <span key={ticker} className="badge pending" style={{ background: 'var(--bg-surface)' }}>
-                        {ticker}
-                      </span>
-                    ))}
+                    {tickers.map(ticker => {
+                      const isChecked = checkedTickers.includes(ticker);
+                      return (
+                        <div 
+                          key={ticker} 
+                          onClick={() => toggleTicker(ticker)}
+                          style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            gap: '0.4rem', 
+                            cursor: 'pointer', 
+                            background: isChecked ? 'var(--accent-color)' : 'var(--bg-surface)', 
+                            color: isChecked ? 'var(--accent-text)' : 'var(--text-secondary)',
+                            padding: '0.4rem 0.8rem', 
+                            borderRadius: '20px', 
+                            border: '1px solid',
+                            borderColor: isChecked ? 'var(--accent-color)' : 'var(--border-color)',
+                            userSelect: 'none', 
+                            boxSizing: 'border-box'
+                          }}
+                        >
+                          {isChecked ? <Check size={14} /> : <Plus size={14} />}
+                          <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{ticker}</span>
+                          <a 
+                            href={`https://finance.yahoo.com/quote/${ticker}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ color: 'inherit', marginLeft: '0.1rem', display: 'flex', alignItems: 'center', opacity: 0.7 }}
+                            title="View on Yahoo Finance"
+                          >
+                            <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
+              
+              {/* Slot 6: User Added */}
+              <div className="data-card" style={{ border: '1px solid var(--accent-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+                  <div style={{ color: 'var(--accent-color)', display: 'inline-flex', marginTop: '0.15rem' }}>
+                    <Cpu size={16} className="text-accent-color" />
+                  </div>
+                  <div style={{ 
+                    fontSize: '0.8rem', 
+                    fontWeight: 600, 
+                    color: 'var(--text-primary)', 
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.05em',
+                    lineHeight: '1.4'
+                  }}>
+                    User Added
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <TagInput 
+                    tags={userAddedTickers} 
+                    setTags={setUserAddedTickers} 
+                    existingTags={selectedTickers}
+                    placeholder="Add manual tickers (Press Enter)"
+                  />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {userAddedTickers.map(ticker => {
+                      const isChecked = checkedTickers.includes(ticker);
+                      return (
+                        <div 
+                          key={`user_added_${ticker}`} 
+                          onClick={() => toggleTicker(ticker)}
+                          style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            gap: '0.4rem', 
+                            cursor: 'pointer', 
+                            background: isChecked ? 'var(--accent-color)' : 'var(--bg-surface)', 
+                            color: isChecked ? 'var(--accent-text)' : 'var(--text-secondary)',
+                            padding: '0.4rem 0.8rem', 
+                            borderRadius: '20px', 
+                            border: '1px solid',
+                            borderColor: isChecked ? 'var(--accent-color)' : 'var(--border-color)',
+                            userSelect: 'none', 
+                            boxSizing: 'border-box'
+                          }}
+                        >
+                          {isChecked ? <Check size={14} /> : <Plus size={14} />}
+                          <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{ticker}</span>
+                          <a 
+                            href={`https://finance.yahoo.com/quote/${ticker}`} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ color: 'inherit', marginLeft: '0.1rem', display: 'flex', alignItems: 'center', opacity: 0.7 }}
+                            title="View on Yahoo Finance"
+                          >
+                            <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              
             </div>
 
             <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
               <button 
                 className="btn" 
-                onClick={() => onProceedToResearch(selectedTickers)}
+                onClick={() => onProceedToResearch(checkedTickers)}
+                disabled={checkedTickers.length === 0}
                 style={{ background: 'var(--success)', color: '#ffffff' }}
               >
-                Proceed to Research ({selectedTickers.length} Stocks) <ArrowRight size={16} />
+                Proceed to Research ({checkedTickers.length} Stocks) <ArrowRight size={16} />
               </button>
             </div>
           </div>

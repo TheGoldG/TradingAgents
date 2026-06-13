@@ -43,6 +43,7 @@ class PipelineRequest(BaseModel):
     execution_model: Optional[str] = None
     stocks_per_category: int = 3
     custom_tickers: Optional[str] = None
+    scan_entire_market: bool = True
 
 # Global state for frontend polling
 live_state = {
@@ -246,11 +247,11 @@ def run_screener_task(req: PipelineRequest):
             "backend_url": DEFAULT_CONFIG.get("backend_url")
         })
         
-        if req.custom_tickers:
+        if not req.scan_entire_market and req.custom_tickers:
             screener.universe = [t.strip().upper() for t in req.custom_tickers.split(",") if t.strip()]
             
         stocks_per_cat = int(req.stocks_per_category)
-        reasoning, allocations = screener.run_full_screen(stocks_per_category=stocks_per_cat)
+        reasoning, allocations = screener.run_full_screen(stocks_per_category=stocks_per_cat, scan_entire_market=req.scan_entire_market)
         
         # Save the manual screener run to DB
         init_db()

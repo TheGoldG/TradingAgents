@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 
-export default function TagInput({ tags, setTags, disabled, placeholder }) {
+export default function TagInput({ tags, setTags, disabled, placeholder, existingTags = [] }) {
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -11,8 +11,11 @@ export default function TagInput({ tags, setTags, disabled, placeholder }) {
       e.preventDefault();
       const newTag = inputValue.trim().toUpperCase();
       if (!newTag) return;
-      if (tags.includes(newTag)) {
+      if (tags.includes(newTag) || existingTags.includes(newTag)) {
         setInputValue('');
+        if (existingTags.includes(newTag)) {
+           setError(`Ticker ${newTag} is already in the report`);
+        }
         return;
       }
 
