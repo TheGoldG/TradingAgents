@@ -4,7 +4,7 @@ import Portfolio from './components/Portfolio';
 import HistoricalReports from './components/HistoricalReports';
 import Screener from './components/Screener';
 import Executor from './components/Executor';
-import { Play, ShieldAlert, ShieldCheck, LayoutDashboard, History, Sun, Moon, LineChart, Search, Activity } from 'lucide-react';
+import { Play, ShieldAlert, ShieldCheck, LayoutDashboard, History, Sun, Moon, LineChart, Search, Activity, ArrowRight } from 'lucide-react';
 
 function App() {
   const PROVIDERS = [
@@ -64,8 +64,51 @@ function App() {
   };
 
   const [pipelineState, setPipelineState] = useState({ is_running: false, operation: null });
-  const [activeTab, setActiveTab] = useState('live');
+
+  const getInitialTab = () => {
+    const path = window.location.pathname;
+    if (path === '/' || path === '') return 'landing';
+    if (path.includes('/maintenance')) return 'maintenance';
+    if (path.includes('/reports')) return 'history';
+    if (path.includes('/research')) return 'live';
+    return 'landing';
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab());
   const [step, setStep] = useState('screener');
+
+  // Synchronize activeTab state to URL path
+  useEffect(() => {
+    let path = '/';
+    if (activeTab === 'live') {
+      path = '/research';
+    } else if (activeTab === 'maintenance') {
+      path = '/maintenance';
+    } else if (activeTab === 'history') {
+      path = '/reports';
+    }
+    if (window.location.pathname !== path) {
+      window.history.pushState(null, '', path);
+    }
+  }, [activeTab]);
+
+  // Support back/forward navigation in the browser
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      if (path === '/' || path === '') {
+        setActiveTab('landing');
+      } else if (path.includes('/maintenance')) {
+        setActiveTab('maintenance');
+      } else if (path.includes('/reports')) {
+        setActiveTab('history');
+      } else if (path.includes('/research')) {
+        setActiveTab('live');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [screenerTickers, setScreenerTickers] = useState([]);
   
   const [llmProvider, setLlmProvider] = useState('google');
@@ -155,6 +198,166 @@ function App() {
 
   const isRunning = pipelineState.is_running;
 
+  if (activeTab === 'landing') {
+    return (
+      <div style={{ 
+        minHeight: '100vh', 
+        width: '100vw', 
+        display: 'flex', 
+        flexDirection: 'column',
+        background: 'var(--bg-app)',
+        color: 'var(--text-primary)',
+        fontFamily: 'Inter, sans-serif',
+        overflowY: 'auto',
+        boxSizing: 'border-box'
+      }}>
+        {/* Top Navbar */}
+        <header style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          padding: '1.25rem 2.5rem',
+          borderBottom: '1px solid var(--border-color)',
+          background: 'var(--bg-surface)',
+          zIndex: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <LineChart size={24} color="var(--accent-color)" strokeWidth={2.5} />
+            <span style={{ fontSize: '1.25rem', fontWeight: 700, fontFamily: 'Outfit, sans-serif', letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>TradingAgents</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.8rem', borderRadius: '6px' }}
+            >
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                {theme === 'dark' ? 'Light' : 'Dark'}
+              </span>
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--bg-surface-hover)', padding: '0.4rem 0.8rem', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--success)' }} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>System Active</span>
+            </div>
+          </div>
+        </header>
+
+        {/* Hero & Main Content */}
+        <div style={{ 
+          flex: 1, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          padding: '4rem 2rem',
+          maxWidth: '1000px',
+          margin: '0 auto',
+          width: '90%'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+            <span style={{ 
+              fontSize: '0.75rem', 
+              fontWeight: 700, 
+              color: 'var(--accent-color)', 
+              textTransform: 'uppercase', 
+              letterSpacing: '0.2em',
+              marginBottom: '1rem',
+              display: 'block'
+            }}>
+              Autonomous Investment Engine
+            </span>
+            <h1 style={{ 
+              fontSize: '3.25rem', 
+              fontWeight: 800, 
+              fontFamily: 'Outfit, sans-serif',
+              margin: '0 0 1.25rem 0',
+              letterSpacing: '-0.02em',
+              color: 'var(--text-primary)',
+              lineHeight: '1.15'
+            }}>
+              Supercharge your research workflow.
+            </h1>
+            <p style={{ 
+              fontSize: '1.1rem', 
+              color: 'var(--text-secondary)', 
+              maxWidth: '650px', 
+              margin: '0 auto 2.5rem', 
+              lineHeight: '1.6' 
+            }}>
+              Autonomous qualitative research, quantitative economic moat screening, and execution agent universe.
+            </p>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => setActiveTab('live')}
+              style={{ 
+                padding: '0.8rem 2.5rem', 
+                fontSize: '1.05rem', 
+                fontWeight: 600, 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: '0.75rem',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                background: 'var(--accent-color)',
+                color: 'var(--accent-text)',
+                border: 'none',
+                boxShadow: '0 4px 15px rgba(99, 102, 241, 0.35)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Enter Terminal <ArrowRight size={18} />
+            </button>
+          </div>
+
+          {/* Steps Grid */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
+            gap: '1.5rem', 
+            width: '100%' 
+          }}>
+            <div className="data-card" style={{ padding: '1.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.1)', padding: '0.5rem', borderRadius: '6px', color: 'var(--accent-color)', display: 'flex' }}>
+                  <Search size={20} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>1. Moat Screener</h3>
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+                Filter the market quantitatively on PEG, ROE, and Debt-to-Equity, then execute qualitative economic moat evaluations using LLMs.
+              </p>
+            </div>
+
+            <div className="data-card" style={{ padding: '1.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.1)', padding: '0.5rem', borderRadius: '6px', color: 'var(--accent-color)', display: 'flex' }}>
+                  <Activity size={20} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>2. Moat Research</h3>
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+                Run multi-agent debates between bulls and bears to test moats, analyze business risks, and extract granular investment findings.
+              </p>
+            </div>
+
+            <div className="data-card" style={{ padding: '1.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ background: 'rgba(99, 102, 241, 0.1)', padding: '0.5rem', borderRadius: '6px', color: 'var(--accent-color)', display: 'flex' }}>
+                  <ShieldCheck size={20} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>3. Trade Execution</h3>
+              </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+                Submit recommendation orders, track portfolio performance, and review positions inside the auto-rebalancing executor terminal.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-layout">
       {/* Sidebar Navigation */}
@@ -216,17 +419,7 @@ function App() {
         <div className="content-area">
           {activeTab === 'live' && (
             <>
-              {isRunning && (
-                <div className="data-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <Activity className="pulse" size={20} color="var(--accent-color)" />
-                    <h3 style={{ margin: 0 }}>Pipeline Running</h3>
-                  </div>
-                  <button className="btn btn-danger" onClick={stopPipeline}>
-                    Stop Process
-                  </button>
-                </div>
-              )}
+
 
               <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start', width: '100%' }}>
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

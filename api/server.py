@@ -247,19 +247,54 @@ def run_screener_task(req: PipelineRequest):
             "backend_url": DEFAULT_CONFIG.get("backend_url")
         })
         
-        if not req.scan_entire_market and req.custom_tickers:
-            screener.universe = [t.strip().upper() for t in req.custom_tickers.split(",") if t.strip()]
-            
+        custom_list = [t.strip().upper() for t in req.custom_tickers.split(",") if t.strip()] if req.custom_tickers else []
         stocks_per_cat = int(req.stocks_per_category)
-        reasoning, allocations = screener.run_full_screen(stocks_per_category=stocks_per_cat, scan_entire_market=req.scan_entire_market)
         
-        # Save the manual screener run to DB
+        user_added = None
+        
+        if req.scan_entire_market:
+            # Run full market scan (ignoring custom tickers in the main scan)
+            reasoning, allocations = screener.run_full_screen(stocks_per_category=stocks_per_cat, scan_entire_market=True)
+            
+            if custom_list:
+                # Separately evaluate custom tickers through the moat filter
+                # Exclude any that already appeared in the main scan results
+                existing_tickers = set()
+                for tickers in allocations.values():
+                    if isinstance(tickers, list):
+                        existing_tickers.update(tickers)
+                
+                new_custom = [t for t in custom_list if t not in existing_tickers]
+                
+                if new_custom:
+                    emit_event("pipeline_status", {"ticker": "Evaluating custom tickers...", "current": 0, "total": 0, "operation": "screener"})
+                    custom_screener = ScreenerAgent(config={
+                        "llm_provider": req.llm_provider,
+                        "screener_llm": req.screener_model or req.quick_model,
+                        "backend_url": DEFAULT_CONFIG.get("backend_url")
+                    })
+                    custom_screener.universe = new_custom
+                    custom_reasoning, custom_alloc = custom_screener.run_full_screen(stocks_per_category=stocks_per_cat, scan_entire_market=False)
+                    
+                    user_added = {
+                        "reasoning": custom_reasoning,
+                        "selections": custom_alloc
+                    }
+        else:
+            # Scan OFF: evaluate only custom tickers through moat
+            if custom_list:
+                screener.universe = custom_list
+            reasoning, allocations = screener.run_full_screen(stocks_per_category=stocks_per_cat, scan_entire_market=False)
+        
+        # Save the screener run to DB
         init_db()
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         report_payload = {
             "reasoning": reasoning,
             "selections": allocations
         }
+        if user_added is not None:
+            report_payload["user_added"] = user_added
         save_report("SCREENER_REPORT", today, report_payload)
         
         emit_event("screener_complete", report_payload)

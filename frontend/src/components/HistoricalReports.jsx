@@ -161,7 +161,7 @@ function HistoricalReports() {
                 <p style={{ margin: 0, color: 'var(--text-secondary)' }}>Report Date: {selectedDate === 'SCREENER_REPORT' ? 'Screener Scan' : selectedDate}</p>
               </div>
 
-              {selectedDate !== 'SCREENER_REPORT' && (
+              {selectedTicker !== 'SCREENER_REPORT' && (
                 <div style={{ display: 'flex', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
                   <button 
                     className="btn" 
