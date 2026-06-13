@@ -22,6 +22,7 @@ export default function Screener({
   const [initializedReportDate, setInitializedReportDate] = useState(null);
   const [scanEntireMarket, setScanEntireMarket] = useState(true);
   const [userAddedTickers, setUserAddedTickers] = useState([]);
+  const [pastReportDates, setPastReportDates] = useState([]);
 
   // Auto-check newly added manual tickers
   useEffect(() => {
@@ -66,14 +67,44 @@ export default function Screener({
     }
   };
 
+  const fetchPastReportDates = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/reports');
+      const data = await res.json();
+      if (data && data.reports && data.reports.SCREENER_REPORT) {
+        setPastReportDates(data.reports.SCREENER_REPORT);
+      }
+    } catch (e) {
+      console.error("Failed to fetch past screener report dates", e);
+    }
+  };
+
+  const handleLoadPastReport = async (date) => {
+    if (!date) return;
+    setLoadingLatest(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/reports/SCREENER_REPORT/${date}`);
+      const reportData = await res.json();
+      if (reportData && !reportData.error) {
+        setScreenerReport({ date, report: reportData });
+      }
+    } catch (e) {
+      console.error("Failed to load past screener report", e);
+    } finally {
+      setLoadingLatest(false);
+    }
+  };
+
   useEffect(() => {
     fetchLatestReport();
+    fetchPastReportDates();
   }, []);
 
   // Poll when screener finishes running
   useEffect(() => {
     if (pipelineState && !pipelineState.is_running && pipelineState.operation === null) {
       fetchLatestReport();
+      fetchPastReportDates();
     }
   }, [pipelineState]);
 
@@ -138,18 +169,38 @@ export default function Screener({
             </p>
           </div>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            <label style={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Screener Model</label>
-            <select 
-              value={screenerModel} 
-              onChange={e => setScreenerModel(e.target.value)} 
-              disabled={isScreenerRunning} 
-              className="modern-select"
-            >
-              {Array.from(new Set([...MODELS[llmProvider].quick, ...MODELS[llmProvider].deep])).map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            {pastReportDates.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Load Past Report</label>
+                <select 
+                  value={screenerReport?.date || ''} 
+                  onChange={e => handleLoadPastReport(e.target.value)} 
+                  disabled={isScreenerRunning} 
+                  className="modern-select"
+                  style={{ minWidth: '150px' }}
+                >
+                  <option value="" disabled>Select date...</option>
+                  {pastReportDates.map(date => (
+                    <option key={date} value={date}>{date}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Screener Model</label>
+              <select 
+                value={screenerModel} 
+                onChange={e => setScreenerModel(e.target.value)} 
+                disabled={isScreenerRunning} 
+                className="modern-select"
+              >
+                {Array.from(new Set([...MODELS[llmProvider].quick, ...MODELS[llmProvider].deep])).map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

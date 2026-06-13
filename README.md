@@ -21,6 +21,7 @@ Under the hood, TradingAgents deploys specialized AI agents to analyze a stock f
 * **Full Market Scan:** Toggle on to scan the entire S&P 500 index.
 * **Custom Stock Screening:** Toggle off to focus analysis on a custom set of stock tickers.
 * **Moat Recommendations:** Instantly check if a scanned stock is *"Recommended by Moat"* or *"Not Recommended by Moat"* based on agent analysis.
+* **Historical Report Loading:** Load older qualitative/quantitative screener reports directly from a dropdown to check past recommendations and re-evaluate selections.
 * **Custom Slot Selection:** Manually append newly researched tickers using a tag-based input UI, complete with duplicate checks.
 
 ### 3. Live Research Executor
